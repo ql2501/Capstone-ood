@@ -1,1 +1,2 @@
 # Capstone-ood
+This group project is part of the Columbia University Data Science Capstone course, aimed at developing solutions for out-of-distribution (OOD) challenges. Our primary focus is on deploying and enhancing CoOp with NegPrompt methods, following the frameworks and methodologies outlined in the research papers available at arXiv:2109.01134 and arXiv:2404.03248.
