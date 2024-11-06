@@ -1,0 +1,1 @@
+Theano @ git+https://github.com/Theano/Theano.git@15c90dd3
