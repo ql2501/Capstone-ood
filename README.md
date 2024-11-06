@@ -4,9 +4,12 @@ This group project is part of the Columbia University Data Science Capstone cour
 ### To run CoOp code on Imagenet tiny images:
 ```bash
 cd /CoOp_works/CoOp
+```
 ```bash
 conda activate dassl
+```
 ```bash
 bash scripts/coop/main.sh imagenet rn50_ep50 end 16 1 False
+```
 ```bash
 conda deactivate
