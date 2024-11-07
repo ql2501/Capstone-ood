@@ -591,6 +591,7 @@ class TrainerX(SimpleTrainer):
         self.num_batches = len(self.train_loader_x)
 
         end = time.time()
+        
         for self.batch_idx, batch in enumerate(self.train_loader_x):
             data_time.update(time.time() - end)
             loss_summary = self.forward_backward(batch)
