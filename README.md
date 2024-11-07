@@ -5,14 +5,18 @@ This group project is part of the Columbia University Data Science Capstone cour
 Set up Dassl env
 ```bash
 cd CoOp_works/Dassl.pytorch
+# Create a conda environment
+conda create -y -n dassl python=3.8
+# Activate the environment
+conda activate dassl
+# Install torch (requires version >= 1.8.1) and torchvision
+# Please refer to https://pytorch.org/ if you need a different cuda version
+conda install pytorch torchvision cudatoolkit=10.2 -c pytorch
 pip install -r requirements.txt
+# Install this library (no need to re-build if the source code is modified)
 python setup.py develop
 ```
-If there's no error, activate the dassl environment in order to run CoOp
-```bash
-conda activate dassl
-```
-Go to CoOp directory
+If there's no error, go to CoOp directory
 ```bash
 cd ..
 cd CoOp
