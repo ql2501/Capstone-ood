@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # custom config
-DATA=D:\\CU\\Capstone\\DATA
+DATA=..\\..\\DATA
 TRAINER=CoOp
 
 DATASET=$1

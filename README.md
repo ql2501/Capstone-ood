@@ -2,13 +2,21 @@
 This group project is part of the Columbia University Data Science Capstone course, aimed at developing solutions for out-of-distribution (OOD) challenges. Our primary focus is on deploying and enhancing CoOp with NegPrompt methods, following the frameworks and methodologies outlined in the research papers available in [Learning to Prompt for Vision-Language Models](https://arxiv.org/abs/2109.01134) and [Learning Transferable Negative Prompts for Out-of-Distribution Detection](https://arxiv.org/abs/2404.03248).
 
 ### To run CoOp code on Imagenet tiny images:
-Go to CoOp directory
+Set up Dassl env
 ```bash
-cd /CoOp_works/CoOp
+cd CoOp_works/Dassl.pytorch
+pip install -r requirements.txt
+python setup.py develop
 ```
-Activate the dassl environment in order to run CoOp
+If there's no error, activate the dassl environment in order to run CoOp
 ```bash
 conda activate dassl
+```
+Go to CoOp directory
+```bash
+cd ..
+cd CoOp
+pip install -r requirements.txt
 ```
 Remove previous results for the new training on imagenet
 ```bash
