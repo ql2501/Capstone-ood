@@ -101,6 +101,8 @@ def extend_cfg(cfg):
 
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 
+    cfg.TRAINER.NEGPROMPT = CN()
+    cfg.TRAINER.NEGPROMPT.TEST_PROPERTY = "Test Property"  # a dummy property for testing cfg purpose
 
 def setup_cfg(args):
     cfg = get_cfg_default()
@@ -126,11 +128,11 @@ def setup_cfg(args):
 
 
 def main(args):
-    cfg = setup_cfg(args)
+    cfg = setup_cfg(args)   # 修改了extend_cfg
     if cfg.SEED >= 0:
         print("Setting fixed seed: {}".format(cfg.SEED))
         set_random_seed(cfg.SEED)
-    setup_logger(cfg.OUTPUT_DIR)
+    setup_logger(cfg.OUTPUT_DIR)    # 先不管，应该不影响
 
     if torch.cuda.is_available() and cfg.USE_CUDA:
         torch.backends.cudnn.benchmark = True
@@ -139,7 +141,7 @@ def main(args):
     print("Collecting env info ...")
     print("** System info **\n{}\n".format(collect_env_info()))
 
-    trainer = build_trainer(cfg)
+    trainer = build_trainer(cfg)  # 需要NegPrompt的trainer class放到registry里，具体看negprompt.py
 
     if args.eval_only:
         trainer.load_model(args.model_dir, epoch=args.load_epoch)
