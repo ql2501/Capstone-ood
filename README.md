@@ -27,8 +27,8 @@ cd ..
 cd CoOp
 pip install -r requirements.txt
 ```
-<br>
-Then, choose one of the following: <br>
+  
+Then, choose one of the following:  
 If training on CoOp, remove previous results for the new training on imagenet
 ```bash
 rm -rf output/imagenet/CoOp  
@@ -37,21 +37,21 @@ If training on NegPrompt, remove previous results for the new training on imagen
 ```bash
 rm -rf output/imagenet/NegPrompt  
 ```
-<br>
-Then, choose one of the following: <br>
+  
+Then, choose one of the following:  
 If training on CoOp, call bash scripts to train CoOp on ImagetNet
 ```bash
 bash scripts/coop/main.sh imagenet rn50_ep50 end 16 1 False
 ```
-<br>
-Then, choose one of the following: <br>
+  
+Then, choose one of the following:  
 If training on NegPrompt, call bash scripts to train NegPrompt on ImagetNet
 ```bash
 bash scripts/negprompt/main.sh imagenet vit_b16_ep50 end 16 1 False
 ```
-<br>
+  
 If run successfully, the output models and logs should be in the path above.  
-<br>
+  
 Finally, deactivate the environment
 ```bash
 conda deactivate
