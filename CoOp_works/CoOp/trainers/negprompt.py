@@ -19,7 +19,7 @@ class NegPrompt(TrainerX):
     # dummy method
     # CoOp_works\Dassl.pytorch\dassl\engine\trainer.py 第324行，会在initialize SimpleTrainer的时候call build_model
     # 所以这里要override一下
-    def build_model():
+    def build_model(self):
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.build_model")
 
     # 之后train应该会用到
@@ -31,5 +31,5 @@ class NegPrompt(TrainerX):
         raise NotImplementedError
     
     # override SimpleTrainer的train()
-    def train(): 
+    def train(self): 
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.train")
