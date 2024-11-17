@@ -75,47 +75,17 @@ class ImageNet(DatasetBase):
                 classnames[folder] = classname
         return classnames
 
-    @staticmethod
-    def read_val_annotations(text_file):
-        """Return a dictionary containing
-        key-value pairs of <val image name>: <folder name>.
-        """
-        val_annotations = OrderedDict()
-        with open(text_file, "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                line = line.strip().split("\t")
-                image_name = line[0]
-                folder = line[1]
-                val_annotations[image_name] = folder
-        return val_annotations
-
-
     def read_data(self, classnames, split_dir):
-        IS_VAL = False
-        if split_dir == "val": 
-            IS_VAL = True
         split_dir = os.path.join(self.image_dir, split_dir)
         folders = sorted(f.name for f in os.scandir(split_dir) if f.is_dir())
         items = []
 
-        # tiny images version of ImageNet, the training images are within the "images" file
-        if not IS_VAL: 
-            for label, folder in enumerate(folders):
-                imnames = listdir_nohidden(os.path.join(split_dir, folder, 'images'))
-                classname = classnames[folder]
-                for imname in imnames:
-                    impath = os.path.join(split_dir, folder, 'images', imname)
-                    item = Datum(impath=impath, label=label, classname=classname)
-                    items.append(item)
-        else: 
-            for label, folder in enumerate(folders):
-                imnames = listdir_nohidden(os.path.join(split_dir, folder))
-                val_annotations = self.read_val_annotations(os.path.join(split_dir, "val_annotations.txt"))
-                for imname in imnames:
-                    impath = os.path.join(split_dir, folder, imname)
-                    classname = classnames[val_annotations[imname]]
-                    item = Datum(impath=impath, label=label, classname=classname)
-                    items.append(item)
+        for label, folder in enumerate(folders):
+            imnames = listdir_nohidden(os.path.join(split_dir, folder))
+            classname = classnames[folder]
+            for imname in imnames:
+                impath = os.path.join(split_dir, folder, imname)
+                item = Datum(impath=impath, label=label, classname=classname)
+                items.append(item)
 
         return items
