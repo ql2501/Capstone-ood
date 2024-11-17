@@ -174,7 +174,7 @@ classname_dic = {
             'a photo of the big {}.',
         ]
         },
-    "tiny_imagenet" : {
+    "ImageNet" : { # was tiny_imagenet, temporarily rename to ImageNet to unblock development
         "classes":[
             'goldfish',
             'European fire salamander',

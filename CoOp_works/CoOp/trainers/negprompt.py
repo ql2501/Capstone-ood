@@ -227,7 +227,7 @@ foward暂时没有migrate
 class NegPromptCustomCLIP(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        self.prompt_learner = NegPromptCustomCLIP(cfg, classnames, clip_model)
+        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model)
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
         self.text_encoder = NegaTextEncoder(clip_model)
