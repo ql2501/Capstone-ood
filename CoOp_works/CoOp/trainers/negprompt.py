@@ -1,0 +1,1 @@
+# main model code for negprompt
