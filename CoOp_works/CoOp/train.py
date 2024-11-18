@@ -23,6 +23,8 @@ import datasets.imagenetv2
 import datasets.imagenet_a
 import datasets.imagenet_r
 
+from datasets.classname import *
+
 import trainers.coop
 import trainers.cocoop
 import trainers.zsclip
@@ -103,7 +105,15 @@ def extend_cfg(cfg):
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 
     cfg.TRAINER.NEGPROMPT = CN()
-    cfg.TRAINER.NEGPROMPT.TEST_PROPERTY = "Test Property"  # a dummy property for testing cfg purpose
+    cfg.TRAINER.NEGPROMPT.PREC = "fp16"
+    cfg.TRAINER.NEGPROMPT.N_CTX = 16
+    # if 'ImageNet' in cfg.DATASET:
+    #     print(f"cfg all dataset looks like:{cfg.DATASET}")
+    #     cfg.TRAINER.NEGPROMPT.CTX_INIT = 'a photo of a "{}"'
+    # else:
+    #     cfg.TRAINER.NEGPROMPT.CTX_INIT = classname_dic[cfg.DATASET.NAME]["templates"][0]
+    cfg.TRAINER.NEGPROMPT.CSC = 0 # In NegaPrompt, this defaults to 0
+    cfg.TRAINER.NEGPROMPT.NEGA_CTX = 1 # In NegaPrompt, this defaults to 1
 
 def setup_cfg(args):
     cfg = get_cfg_default()
