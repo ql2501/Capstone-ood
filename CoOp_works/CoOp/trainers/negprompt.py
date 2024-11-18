@@ -90,7 +90,6 @@ class NegaTextEncoder(nn.Module):
 '''
 # This is corresponding to PromptLearner In Coop
 class NegaPromptLearner(nn.Module):
-    
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
         n_cls = len(classnames)
@@ -223,28 +222,33 @@ class NegaPromptLearner(nn.Module):
 '''
 foward暂时没有migrate
 '''
+# 中间层
 # Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
 class NegPromptCustomCLIP(nn.Module):
+    # Qi's modification: 
+    # this __init__ should follow the one in NegPromptClip instead of the one in CoOp
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model)
+        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model).cuda()
+        self.n_nega_ctx = cfg['NEGA_CTX']
+        self.stage = cfg['stage']
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
-        self.text_encoder = NegaTextEncoder(clip_model)
+        self.text_encoder = NegaTextEncoder(clip_model).cuda()
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+        self.classnames = classnames
+        self.positive_text_features = None
+        self.clip_model = clip_model
+        self.cfg = cfg
 
     def forward(self, image):
         pass
 
 # TODO: migrate NegaPromptCLIP to the following NegPrompt class
-# 这个是最上面的一层，包在NegaPromptLearner和NegaTextEncoder上面. 
+# 这个是最上面的一层，通过中间层包在NegaPromptLearner和NegaTextEncoder上面. 
 @TRAINER_REGISTRY.register()
 class NegPrompt(TrainerX):
-    """
-        Dummy class for NegPrompt for config debugging
-    """
-
     # dummy method 
     def load_model(self, directory, epoch=None): 
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
@@ -253,7 +257,6 @@ class NegPrompt(TrainerX):
     def test(self): 
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
 
-    # dummy method
     # CoOp_works\Dassl.pytorch\dassl\engine\trainer.py 第324行，会在initialize SimpleTrainer的时候call build_model
     # 所以这里要override一下
     def build_model(self):
