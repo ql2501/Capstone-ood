@@ -183,13 +183,12 @@ class NegaPromptLearner(nn.Module):
         tokenized_prompts = tokenized_prompts.view(tokenized_prompts.shape[0]*tokenized_prompts.shape[1], -1)
         self.register_buffer("token_prefix", embedding[:, :, :1, :])  # SOS
         self.register_buffer("token_suffix", embedding[:, :, 1 + n_ctx :, :])  # positive prompt CLS, EOS
-        if cfg['stage'] >= 2:
-            self.register_buffer("positive_token_prefix", embedding[:, :1, :1, :])  # SOS
-            self.register_buffer("positive_token_suffix", embedding[:, :1, 1 + n_ctx :, :])  # positive prompt CLS, EOS
-            self.register_buffer("negative_token_prefix", embedding[:, 1:, :1, :])  # SOS
-            self.register_buffer("negative_token_suffix", embedding[:, 1:, 1 + n_ctx :, :])
-            self.positive_tokenized_prompts = positive_tokenized_prompts.view(positive_tokenized_prompts.shape[0]*positive_tokenized_prompts.shape[1], -1)
-            self.negative_tokenized_prompts = negative_tokenized_prompts.view(negative_tokenized_prompts.shape[0]*negative_tokenized_prompts.shape[1], -1)
+        self.register_buffer("positive_token_prefix", embedding[:, :1, :1, :])  # SOS
+        self.register_buffer("positive_token_suffix", embedding[:, :1, 1 + n_ctx :, :])  # positive prompt CLS, EOS
+        self.register_buffer("negative_token_prefix", embedding[:, 1:, :1, :])  # SOS
+        self.register_buffer("negative_token_suffix", embedding[:, 1:, 1 + n_ctx :, :])
+        self.positive_tokenized_prompts = positive_tokenized_prompts.view(positive_tokenized_prompts.shape[0]*positive_tokenized_prompts.shape[1], -1)
+        self.negative_tokenized_prompts = negative_tokenized_prompts.view(negative_tokenized_prompts.shape[0]*negative_tokenized_prompts.shape[1], -1)
 
         self.n_cls = n_cls
         self.n_ctx = n_ctx
@@ -203,9 +202,25 @@ class NegaPromptLearner(nn.Module):
     # TODO: further check if foward_positive is needed. If not discard it
     def foward_positive(self):
         pass
-
+    
+    # Returns the prompt vectors for the negative class names only.
     def foward_negative(self):
-        pass
+        ctx_negative = self.ctx_negative
+        if ctx_negative.dim() == 3:
+            ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
+        else:
+            ctx = ctx_negative
+        prefix = self.negative_token_prefix
+        suffix = self.negative_token_suffix
+        prompts = torch.cat(
+            [
+                prefix,  # (n_cls,1+n_neg, 1, dim)
+                ctx,     # (n_cls,1+n_neg, n_ctx, dim)
+                suffix,  # (n_cls,1+n_neg, *, dim)
+            ],
+            dim = 2,
+        )
+        return prompts
 
     def update_ctx_positive(self, ctx_posi):
         pass
@@ -220,10 +235,9 @@ class NegaPromptLearner(nn.Module):
         pass
 
 '''
-foward暂时没有migrate
+Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
 '''
 # 中间层
-# Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
 class NegPromptCustomCLIP(nn.Module):
     # Qi's modification: 
     # this __init__ should follow the one in NegPromptClip instead of the one in CoOp
@@ -231,7 +245,6 @@ class NegPromptCustomCLIP(nn.Module):
         super().__init__()
         self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model).cuda()
         self.n_nega_ctx = cfg['NEGA_CTX']
-        self.stage = cfg['stage']
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
         self.text_encoder = NegaTextEncoder(clip_model).cuda()
@@ -242,8 +255,33 @@ class NegPromptCustomCLIP(nn.Module):
         self.clip_model = clip_model
         self.cfg = cfg
 
+    # Qi: 
+    # In our case, we only train negative prompts, corresponding to stage 3 in NegPrompt
     def forward(self, image):
-        pass
+        return self.forward_negative(image)
+    
+    # Only learn the negative prompts
+    # return shape:
+    # logits: [batch_size, nclass * 1+n_nega_ctx]
+    # text_features: [nclass * 1+n_nega_ctx, 512]
+    def forward_negative(self, image): 
+        image_features = self.image_encoder(image.type(self.dtype))
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        negative_prompts = self.prompt_learner.foward_negative()    # use negative prompts only
+        negative_tokenized_prompts = self.prompt_learner.negative_tokenized_prompts
+        negative_text_features = self.text_encoder(negative_prompts, negative_tokenized_prompts) #(1000*n_nega_ctx) * 512)
+        positive_text_features = self.positive_text_features # 1000*512, fixed
+        #fusion the text_features that positive, negative, positive, negative, ...
+        positive_text_features = positive_text_features.view(positive_text_features.shape[0], 1, -1)
+        negative_text_features = negative_text_features.view(positive_text_features.shape[0], self.n_nega_ctx, -1)  # 1000 * n_nega_ctx * 512
+
+        # here we concatenate the positive and negative text features
+        text_features = torch.cat([positive_text_features, negative_text_features], dim=1)  
+        text_features = text_features.view(text_features.shape[0]*text_features.shape[1], -1)   # 1000*(1+n_nega_ctx) * 512
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)    # shape: 1000*(1+n_nega_ctx) * 512
+        logit_scale = self.logit_scale.exp()
+        logits = (logit_scale * image_features @ text_features.t())
+        return logits, text_features
 
 # TODO: migrate NegaPromptCLIP to the following NegPrompt class
 # 这个是最上面的一层，通过中间层包在NegaPromptLearner和NegaTextEncoder上面. 
@@ -273,8 +311,8 @@ class NegPrompt(TrainerX):
             # CLIP's default precision is fp16
             clip_model.float()
         
-        # TODO: 复现NegPromt版本的CustomClip()
-        print("TODO: Building NegPrompt's custom CLIP")
+        # 复现NegPromt版本的CustomClip()
+        print("Building NegPrompt's custom CLIP")
         self.model = NegPromptCustomCLIP(cfg, classnames, clip_model)
         print(f"Successfully building NegPrompt's custom CLIP")
         print('-' * 80)
