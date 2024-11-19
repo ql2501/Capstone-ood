@@ -303,20 +303,13 @@ class NegPromptCustomCLIP(nn.Module):
         logits = (logit_scale * image_features @ text_features.t())
         return logits, text_features
 
-# TODO: migrate NegaPromptCLIP to the following NegPrompt class
+'''
+    Migrate NegaPromptCLIP to the following NegPrompt class
+''' 
 # 这个是最上面的一层，通过中间层包在NegaPromptLearner和NegaTextEncoder上面. 
 @TRAINER_REGISTRY.register()
 class NegPrompt(TrainerX):
-    # dummy method 
-    def load_model(self, directory, epoch=None): 
-        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
-
-    # dummy method 
-    def test(self): 
-        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
-
-    # CoOp_works\Dassl.pytorch\dassl\engine\trainer.py 第324行，会在initialize SimpleTrainer的时候call build_model
-    # 所以这里要override一下
+    # Override build_model in line 324 from CoOp_works\Dassl.pytorch\dassl\engine\trainer.py
     def build_model(self):
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.build_model")
         cfg = self.cfg
@@ -331,18 +324,38 @@ class NegPrompt(TrainerX):
             # CLIP's default precision is fp16
             clip_model.float()
         
-        # 复现NegPromt版本的CustomClip()
+        # Re-implemented NegPromt's CustomClip()
         print("Building NegPrompt's custom CLIP")
         self.model = NegPromptCustomCLIP(cfg, classnames, clip_model)
         print(f"Successfully building NegPrompt's custom CLIP")
         print('-' * 80)
 
-        # TODO: Migrate parameter freezing logic in NegPrompt, freeze positive prompts as well
-        print("Migrating from CoOp, turning off gradients in both the image and the text encoder")
-        # for name, param in self.model.named_parameters():
-        #     if "prompt_learner" not in name:
-        #         param.requires_grad_(False)
+        # Migrate parameter freezing logic in NegPrompt, freeze positive prompts as well
+        print("Turning off gradients in both the image and the text encoder...")
+        for name, param in self.model.named_parameters():
+            if "prompt_learner" not in name or "ctx_positive" in name:
+                param.requires_grad_(False)
+            else: 
+                print(f"Remaining active gradient in {name}, paramter shape {param.shape}")\
 
+        # if need to initialize weights 
+        if cfg.MODEL.INIT_WEIGHTS:
+            load_pretrained_weights(self.model.prompt_learner, cfg.MODEL.INIT_WEIGHTS)
+
+        self.model.to(self.device)
+        # Only give prompt_learner to the optimizer
+        self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
+        self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
+        self.register_model("prompt_learner", self.model.prompt_learner, self.optim, self.sched)
+        print("Finished building model NegPrompt")
+
+    # dummy method 
+    def load_model(self, directory, epoch=None): 
+        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
+
+    # dummy method 
+    def test(self): 
+        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
 
     # 之后train应该会用到
     def forward_backward(self, batch):
