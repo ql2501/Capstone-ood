@@ -25,6 +25,10 @@ from datasets.classname import *
 
 _tokenizer = _Tokenizer()
 
+# A global boolean for local debugging usage
+# should be False for local debugging on CPU, True for training 
+CUDA_ENABLED = torch.cuda.is_available()
+
 # Migrating helper functions from CoOp/trainers/coop.py to here
 # Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
 def load_clip_to_cpu(cfg):
@@ -90,7 +94,6 @@ class NegaTextEncoder(nn.Module):
 '''
 # This is corresponding to PromptLearner In Coop
 class NegaPromptLearner(nn.Module):
-    
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
         n_cls = len(classnames)
@@ -120,7 +123,8 @@ class NegaPromptLearner(nn.Module):
             words = re.findall(r'\b\w+\b', ctx_init)
             n_ctx = len(words)
             prompt = clip.tokenize(ctx_init)
-            prompt = prompt.cuda()
+            if CUDA_ENABLED: 
+                prompt = prompt.cuda()
             with torch.no_grad():
                 embedding = clip_model.token_embedding(prompt).type(dtype) 
             ctx_vectors = embedding[0, 1 : 1 + n_ctx, :]
@@ -132,10 +136,14 @@ class NegaPromptLearner(nn.Module):
             # random initialization
             if cfg['CSC']>0:
                 print("Initializing class-specific contexts")
-                ctx_vectors = torch.empty(n_cls, 1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype).cuda()
+                ctx_vectors = torch.empty(n_cls, 1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype)
             else:
                 print("Initializing a generic context")
-                ctx_vectors = torch.empty(1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype).cuda()
+                ctx_vectors = torch.empty(1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype)
+
+            if CUDA_ENABLED: 
+                ctx_vectors = ctx_vectors.cuda()
+
             nn.init.normal_(ctx_vectors, std=0.02)
             prompt_prefix = " ".join(["X"] * n_ctx)
 
@@ -151,7 +159,9 @@ class NegaPromptLearner(nn.Module):
             ctx_negative = ctx_vectors[:, 1:, :, :]
         self.ctx_positive = nn.Parameter(ctx_positive)  # to be optimized
         if ctx_negative.shape[0] == 0:
-            ctx_negative = torch.empty(0, dtype=dtype).cuda()
+            ctx_negative = torch.empty(0, dtype=dtype)
+            if CUDA_ENABLED: 
+                ctx_negative = ctx_negative.cuda()
         self.ctx_negative = nn.Parameter(ctx_negative)  # to be optimized
         
         classnames = [name.replace("_", " ") for name in classnames]
@@ -159,8 +169,11 @@ class NegaPromptLearner(nn.Module):
         positive_prompts = [prompt_prefix + " " +  name   for name in classnames]
         negative_prompts = [prompt_prefix + " " + name  for name in classnames]     # same as positive prompts
             
-        positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts]).cuda()
-        negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts]).cuda()
+        positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts])
+        negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts])
+        if CUDA_ENABLED: 
+            positive_tokenized_prompts = positive_tokenized_prompts.cuda()
+            negative_tokenized_prompts = negative_tokenized_prompts.cuda()
         # tokenized_prompts:
         # tensor([ <start>    a     photo   of   a  positive [classname] . <end>
                 # [49406,   320,  1125,   539,   320,  4844,  1929,   269, 49407, 0 ...,0],
@@ -184,13 +197,12 @@ class NegaPromptLearner(nn.Module):
         tokenized_prompts = tokenized_prompts.view(tokenized_prompts.shape[0]*tokenized_prompts.shape[1], -1)
         self.register_buffer("token_prefix", embedding[:, :, :1, :])  # SOS
         self.register_buffer("token_suffix", embedding[:, :, 1 + n_ctx :, :])  # positive prompt CLS, EOS
-        if cfg['stage'] >= 2:
-            self.register_buffer("positive_token_prefix", embedding[:, :1, :1, :])  # SOS
-            self.register_buffer("positive_token_suffix", embedding[:, :1, 1 + n_ctx :, :])  # positive prompt CLS, EOS
-            self.register_buffer("negative_token_prefix", embedding[:, 1:, :1, :])  # SOS
-            self.register_buffer("negative_token_suffix", embedding[:, 1:, 1 + n_ctx :, :])
-            self.positive_tokenized_prompts = positive_tokenized_prompts.view(positive_tokenized_prompts.shape[0]*positive_tokenized_prompts.shape[1], -1)
-            self.negative_tokenized_prompts = negative_tokenized_prompts.view(negative_tokenized_prompts.shape[0]*negative_tokenized_prompts.shape[1], -1)
+        self.register_buffer("positive_token_prefix", embedding[:, :1, :1, :])  # SOS
+        self.register_buffer("positive_token_suffix", embedding[:, :1, 1 + n_ctx :, :])  # positive prompt CLS, EOS
+        self.register_buffer("negative_token_prefix", embedding[:, 1:, :1, :])  # SOS
+        self.register_buffer("negative_token_suffix", embedding[:, 1:, 1 + n_ctx :, :])
+        self.positive_tokenized_prompts = positive_tokenized_prompts.view(positive_tokenized_prompts.shape[0]*positive_tokenized_prompts.shape[1], -1)
+        self.negative_tokenized_prompts = negative_tokenized_prompts.view(negative_tokenized_prompts.shape[0]*negative_tokenized_prompts.shape[1], -1)
 
         self.n_cls = n_cls
         self.n_ctx = n_ctx
@@ -201,12 +213,29 @@ class NegaPromptLearner(nn.Module):
     def forward(self):
         pass
 
-    # TODO: further check if foward_positive is needed. If not discard it
-    def foward_positive(self):
+    # TODO: further check if forward_positive is needed. If not discard it
+    def forward_positive(self):
         pass
-
-    def foward_negative(self):
-        pass
+    
+    # Returns the prompt vectors for the negative class names only.
+    def forward_negative(self):
+        print("Reached forward_negative in NegaPromptLearner")
+        ctx_negative = self.ctx_negative
+        if ctx_negative.dim() == 3:
+            ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
+        else:
+            ctx = ctx_negative
+        prefix = self.negative_token_prefix
+        suffix = self.negative_token_suffix
+        prompts = torch.cat(
+            [
+                prefix,  # (n_cls,1+n_neg, 1, dim)
+                ctx,     # (n_cls,1+n_neg, n_ctx, dim)
+                suffix,  # (n_cls,1+n_neg, *, dim)
+            ],
+            dim = 2,
+        )
+        return prompts
 
     def update_ctx_positive(self, ctx_posi):
         pass
@@ -221,41 +250,66 @@ class NegaPromptLearner(nn.Module):
         pass
 
 '''
-foward暂时没有migrate
+Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
 '''
-# Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
+# 中间层
 class NegPromptCustomCLIP(nn.Module):
+    # Qi's modification: 
+    # this __init__ should follow the one in NegPromptClip instead of the one in CoOp
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
         self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model)
+        if CUDA_ENABLED: 
+            self.prompt_learner = self.prompt_learner.cuda()
+        self.n_nega_ctx = cfg.TRAINER.NEGPROMPT.NEGA_CTX
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
         self.text_encoder = NegaTextEncoder(clip_model)
+        if CUDA_ENABLED: 
+            self.text_encoder = self.text_encoder.cuda()
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+        self.classnames = classnames
+        self.positive_text_features = None
+        self.clip_model = clip_model
+        self.cfg = cfg
 
+    # Qi: 
+    # In our case, we only train negative prompts, corresponding to stage 3 in NegPrompt
     def forward(self, image):
-        pass
+        return self.forward_negative(image)
+    
+    # Only learn the negative prompts
+    # return shape:
+    # logits: [batch_size, nclass * 1+n_nega_ctx]
+    # text_features: [nclass * 1+n_nega_ctx, 512]
+    def forward_negative(self, image): 
+        print("Reached forward_negative in NegPromptCustomCLIP")
+        image_features = self.image_encoder(image.type(self.dtype))
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        negative_prompts = self.prompt_learner.forward_negative()    # use negative prompts only
+        negative_tokenized_prompts = self.prompt_learner.negative_tokenized_prompts
+        negative_text_features = self.text_encoder(negative_prompts, negative_tokenized_prompts) #(1000*n_nega_ctx) * 512)
+        positive_text_features = self.positive_text_features # 1000*512, fixed
+        #fusion the text_features that positive, negative, positive, negative, ...
+        positive_text_features = positive_text_features.view(positive_text_features.shape[0], 1, -1)
+        negative_text_features = negative_text_features.view(positive_text_features.shape[0], self.n_nega_ctx, -1)  # 1000 * n_nega_ctx * 512
 
-# TODO: migrate NegaPromptCLIP to the following NegPrompt class
-# 这个是最上面的一层，包在NegaPromptLearner和NegaTextEncoder上面. 
+        # here we concatenate the positive and negative text features
+        text_features = torch.cat([positive_text_features, negative_text_features], dim=1)  
+        text_features = text_features.view(text_features.shape[0]*text_features.shape[1], -1)   # 1000*(1+n_nega_ctx) * 512
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)    # shape: 1000*(1+n_nega_ctx) * 512
+        logit_scale = self.logit_scale.exp()
+        logits = (logit_scale * image_features @ text_features.t())
+        return logits, text_features
+
+'''
+    Migrate NegaPromptCLIP to the following NegPrompt class
+''' 
+# 这个是最上面的一层，通过中间层包在NegaPromptLearner和NegaTextEncoder上面. 
 @TRAINER_REGISTRY.register()
 class NegPrompt(TrainerX):
-    """
-        Dummy class for NegPrompt for config debugging
-    """
-
-    # dummy method 
-    def load_model(self, directory, epoch=None): 
-        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
-
-    # dummy method 
-    def test(self): 
-        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
-
-    # dummy method
-    # CoOp_works\Dassl.pytorch\dassl\engine\trainer.py 第324行，会在initialize SimpleTrainer的时候call build_model
-    # 所以这里要override一下
+    # Override build_model in line 324 from CoOp_works\Dassl.pytorch\dassl\engine\trainer.py
     def build_model(self):
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.build_model")
         cfg = self.cfg
@@ -270,18 +324,48 @@ class NegPrompt(TrainerX):
             # CLIP's default precision is fp16
             clip_model.float()
         
-        # TODO: 复现NegPromt版本的CustomClip()
-        print("TODO: Building NegPrompt's custom CLIP")
+        # Re-implemented NegPromt's CustomClip()
+        print("Building NegPrompt's custom CLIP")
         self.model = NegPromptCustomCLIP(cfg, classnames, clip_model)
         print(f"Successfully building NegPrompt's custom CLIP")
         print('-' * 80)
 
-        # TODO: Migrate parameter freezing logic in NegPrompt, freeze positive prompts as well
-        print("Migrating from CoOp, turning off gradients in both the image and the text encoder")
-        # for name, param in self.model.named_parameters():
-        #     if "prompt_learner" not in name:
-        #         param.requires_grad_(False)
+        # Migrate parameter freezing logic in NegPrompt, freeze positive prompts as well
+        print("Turning off gradients in both the image and the text encoder...")
+        for name, param in self.model.named_parameters():
+            if "prompt_learner" not in name or "ctx_positive" in name:
+                param.requires_grad_(False)
+            else: 
+                print(f"Remaining active gradient in {name}, paramter shape {param.shape}")\
 
+        # if need to initialize weights 
+        if cfg.MODEL.INIT_WEIGHTS:
+            load_pretrained_weights(self.model.prompt_learner, cfg.MODEL.INIT_WEIGHTS)
+
+        self.model.to(self.device)
+        # Only give prompt_learner to the optimizer
+        self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
+        self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
+        self.register_model("prompt_learner", self.model.prompt_learner, self.optim, self.sched)
+
+        self.scaler = GradScaler() if cfg.TRAINER.COOP.PREC == "amp" else None
+
+        # Note that multi-gpu training could be slow because CLIP's size is
+        # big, which slows down the copy operation in DataParallel
+        device_count = torch.cuda.device_count()
+        if device_count > 1:
+            print(f"Multiple GPUs detected (n_gpus={device_count}), use all of them!")
+            self.model = nn.DataParallel(self.model)
+
+        print("Finished building model NegPrompt")
+
+    # dummy method 
+    def load_model(self, directory, epoch=None): 
+        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
+
+    # dummy method 
+    def test(self): 
+        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
 
     # 之后train应该会用到
     def forward_backward(self, batch):
