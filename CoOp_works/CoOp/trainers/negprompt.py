@@ -25,6 +25,10 @@ from datasets.classname import *
 
 _tokenizer = _Tokenizer()
 
+# A global boolean for local debugging usage
+# should be False for local debugging on CPU, True for training 
+CUDA_ENABLED = torch.cuda.is_available()
+
 # Migrating helper functions from CoOp/trainers/coop.py to here
 # Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
 def load_clip_to_cpu(cfg):
@@ -119,7 +123,8 @@ class NegaPromptLearner(nn.Module):
             words = re.findall(r'\b\w+\b', ctx_init)
             n_ctx = len(words)
             prompt = clip.tokenize(ctx_init)
-            prompt = prompt.cuda()
+            if CUDA_ENABLED: 
+                prompt = prompt.cuda()
             with torch.no_grad():
                 embedding = clip_model.token_embedding(prompt).type(dtype) 
             ctx_vectors = embedding[0, 1 : 1 + n_ctx, :]
@@ -131,10 +136,14 @@ class NegaPromptLearner(nn.Module):
             # random initialization
             if cfg['CSC']>0:
                 print("Initializing class-specific contexts")
-                ctx_vectors = torch.empty(n_cls, 1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype).cuda()
+                ctx_vectors = torch.empty(n_cls, 1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype)
             else:
                 print("Initializing a generic context")
-                ctx_vectors = torch.empty(1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype).cuda()
+                ctx_vectors = torch.empty(1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype)
+
+            if CUDA_ENABLED: 
+                ctx_vectors = ctx_vectors.cuda()
+
             nn.init.normal_(ctx_vectors, std=0.02)
             prompt_prefix = " ".join(["X"] * n_ctx)
 
@@ -150,7 +159,9 @@ class NegaPromptLearner(nn.Module):
             ctx_negative = ctx_vectors[:, 1:, :, :]
         self.ctx_positive = nn.Parameter(ctx_positive)  # to be optimized
         if ctx_negative.shape[0] == 0:
-            ctx_negative = torch.empty(0, dtype=dtype).cuda()
+            ctx_negative = torch.empty(0, dtype=dtype)
+            if CUDA_ENABLED: 
+                ctx_negative = ctx_negative.cuda()
         self.ctx_negative = nn.Parameter(ctx_negative)  # to be optimized
         
         classnames = [name.replace("_", " ") for name in classnames]
@@ -158,8 +169,11 @@ class NegaPromptLearner(nn.Module):
         positive_prompts = [prompt_prefix + " " +  name   for name in classnames]
         negative_prompts = [prompt_prefix + " " + name  for name in classnames]     # same as positive prompts
             
-        positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts]).cuda()
-        negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts]).cuda()
+        positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts])
+        negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts])
+        if CUDA_ENABLED: 
+            positive_tokenized_prompts = positive_tokenized_prompts.cuda()
+            negative_tokenized_prompts = negative_tokenized_prompts.cuda()
         # tokenized_prompts:
         # tensor([ <start>    a     photo   of   a  positive [classname] . <end>
                 # [49406,   320,  1125,   539,   320,  4844,  1929,   269, 49407, 0 ...,0],
@@ -243,11 +257,15 @@ class NegPromptCustomCLIP(nn.Module):
     # this __init__ should follow the one in NegPromptClip instead of the one in CoOp
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model).cuda()
+        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model)
+        if CUDA_ENABLED: 
+            self.prompt_learner = self.prompt_learner.cuda()
         self.n_nega_ctx = cfg['NEGA_CTX']
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
-        self.text_encoder = NegaTextEncoder(clip_model).cuda()
+        self.text_encoder = NegaTextEncoder(clip_model)
+        if CUDA_ENABLED: 
+            self.text_encoder = self.text_encoder.cuda()
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.classnames = classnames
