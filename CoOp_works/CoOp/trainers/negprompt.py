@@ -213,12 +213,12 @@ class NegaPromptLearner(nn.Module):
     def forward(self):
         pass
 
-    # TODO: further check if foward_positive is needed. If not discard it
-    def foward_positive(self):
+    # TODO: further check if forward_positive is needed. If not discard it
+    def forward_positive(self):
         pass
     
     # Returns the prompt vectors for the negative class names only.
-    def foward_negative(self):
+    def forward_negative(self):
         ctx_negative = self.ctx_negative
         if ctx_negative.dim() == 3:
             ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
@@ -260,7 +260,7 @@ class NegPromptCustomCLIP(nn.Module):
         self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model)
         if CUDA_ENABLED: 
             self.prompt_learner = self.prompt_learner.cuda()
-        self.n_nega_ctx = cfg['NEGA_CTX']
+        self.n_nega_ctx = cfg.TRAINER.NEGPROMPT.NEGA_CTX
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
         self.text_encoder = NegaTextEncoder(clip_model)
@@ -285,7 +285,7 @@ class NegPromptCustomCLIP(nn.Module):
     def forward_negative(self, image): 
         image_features = self.image_encoder(image.type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        negative_prompts = self.prompt_learner.foward_negative()    # use negative prompts only
+        negative_prompts = self.prompt_learner.forward_negative()    # use negative prompts only
         negative_tokenized_prompts = self.prompt_learner.negative_tokenized_prompts
         negative_text_features = self.text_encoder(negative_prompts, negative_tokenized_prompts) #(1000*n_nega_ctx) * 512)
         positive_text_features = self.positive_text_features # 1000*512, fixed
