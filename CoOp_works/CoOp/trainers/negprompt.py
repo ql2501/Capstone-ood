@@ -219,6 +219,7 @@ class NegaPromptLearner(nn.Module):
     
     # Returns the prompt vectors for the negative class names only.
     def forward_negative(self):
+        print("Reached forward_negative in NegaPromptLearner")
         ctx_negative = self.ctx_negative
         if ctx_negative.dim() == 3:
             ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
@@ -283,6 +284,7 @@ class NegPromptCustomCLIP(nn.Module):
     # logits: [batch_size, nclass * 1+n_nega_ctx]
     # text_features: [nclass * 1+n_nega_ctx, 512]
     def forward_negative(self, image): 
+        print("Reached forward_negative in NegPromptCustomCLIP")
         image_features = self.image_encoder(image.type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         negative_prompts = self.prompt_learner.forward_negative()    # use negative prompts only
