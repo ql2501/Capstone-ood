@@ -88,6 +88,8 @@ class NegaTextEncoder(nn.Module):
 
         return x
 
+# Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 '''
 暂时只migrate过来了init function to unblock build_model
@@ -122,13 +124,11 @@ class NegaPromptLearner(nn.Module):
             ctx_init = ctx_init.replace("_", " ")
             words = re.findall(r'\b\w+\b', ctx_init)
             n_ctx = len(words)
-            prompt = clip.tokenize(ctx_init)
-            if CUDA_ENABLED: 
-                prompt = prompt.cuda()
+            prompt = clip.tokenize(ctx_init).to(device) # move to correct device
             with torch.no_grad():
-                embedding = clip_model.token_embedding(prompt).type(dtype) 
+                embedding = clip_model.token_embedding(prompt).type(dtype).to(device)
             ctx_vectors = embedding[0, 1 : 1 + n_ctx, :]
-            ctx_vectors = ctx_vectors.view(1, ctx_vectors.shape[0], ctx_vectors.shape[1]) # class_posi, ctx, vector
+            ctx_vectors = ctx_vectors.view(1, ctx_vectors.shape[0], ctx_vectors.shape[1]).to(device) # class_posi, ctx, vector
             ctx_vectors = ctx_vectors.repeat(1+n_nega_ctx, 1, 1)    # expand in first dimension (not batch)
             prompt_prefix = ctx_init
 
@@ -141,9 +141,7 @@ class NegaPromptLearner(nn.Module):
                 print("Initializing a generic context")
                 ctx_vectors = torch.empty(1+n_nega_ctx, n_ctx, ctx_dim, dtype=dtype)
 
-            if CUDA_ENABLED: 
-                ctx_vectors = ctx_vectors.cuda()
-
+            ctx_vectors = ctx_vectors.to(device)
             nn.init.normal_(ctx_vectors, std=0.02)
             prompt_prefix = " ".join(["X"] * n_ctx)
 
@@ -157,11 +155,11 @@ class NegaPromptLearner(nn.Module):
         else:
             ctx_positive = ctx_vectors[:, 0:1, :, :]
             ctx_negative = ctx_vectors[:, 1:, :, :]
+        ctx_positive = ctx_positive.to(device)
+        ctx_negative = ctx_negative.to(device)
         self.ctx_positive = nn.Parameter(ctx_positive)  # to be optimized
         if ctx_negative.shape[0] == 0:
-            ctx_negative = torch.empty(0, dtype=dtype)
-            if CUDA_ENABLED: 
-                ctx_negative = ctx_negative.cuda()
+            ctx_negative = torch.empty(0, dtype=dtype).to(device)
         self.ctx_negative = nn.Parameter(ctx_negative)  # to be optimized
         
         classnames = [name.replace("_", " ") for name in classnames]
@@ -169,11 +167,8 @@ class NegaPromptLearner(nn.Module):
         positive_prompts = [prompt_prefix + " " +  name   for name in classnames]
         negative_prompts = [prompt_prefix + " " + name  for name in classnames]     # same as positive prompts
             
-        positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts])
-        negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts])
-        if CUDA_ENABLED: 
-            positive_tokenized_prompts = positive_tokenized_prompts.cuda()
-            negative_tokenized_prompts = negative_tokenized_prompts.cuda()
+        positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts]).to(device)
+        negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts]).to(device)
         # tokenized_prompts:
         # tensor([ <start>    a     photo   of   a  positive [classname] . <end>
                 # [49406,   320,  1125,   539,   320,  4844,  1929,   269, 49407, 0 ...,0],
@@ -181,8 +176,8 @@ class NegaPromptLearner(nn.Module):
                 # [49406,   320,  1125,   539,   320,  4844,  4558,   269, 49407, 0 ...,0],
                 # [49406,   320,  1125,   539,   320,  4844,  6531,   269, 49407, 0 ...,0]])
         with torch.no_grad():
-            positive_embedding = clip_model.token_embedding(positive_tokenized_prompts).type(dtype)
-            negative_embedding = clip_model.token_embedding(negative_tokenized_prompts).type(dtype)
+            positive_embedding = clip_model.token_embedding(positive_tokenized_prompts).type(dtype).to(device)
+            negative_embedding = clip_model.token_embedding(negative_tokenized_prompts).type(dtype).to(device)
         
         # get embeddings
         # squeeze the dimension 1
@@ -220,13 +215,13 @@ class NegaPromptLearner(nn.Module):
     # Returns the prompt vectors for the negative class names only.
     def forward_negative(self):
         print("Reached forward_negative in NegaPromptLearner")
-        ctx_negative = self.ctx_negative
+        ctx_negative = self.ctx_negative.to(device)
         if ctx_negative.dim() == 3:
             ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
         else:
             ctx = ctx_negative
-        prefix = self.negative_token_prefix
-        suffix = self.negative_token_suffix
+        prefix = self.negative_token_prefix.to(device)
+        suffix = self.negative_token_suffix.to(device)
         prompts = torch.cat(
             [
                 prefix,  # (n_cls,1+n_neg, 1, dim)
@@ -258,15 +253,11 @@ class NegPromptCustomCLIP(nn.Module):
     # this __init__ should follow the one in NegPromptClip instead of the one in CoOp
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model)
-        if CUDA_ENABLED: 
-            self.prompt_learner = self.prompt_learner.cuda()
+        self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model).to(device)
         self.n_nega_ctx = cfg.TRAINER.NEGPROMPT.NEGA_CTX
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
-        self.image_encoder = clip_model.visual
-        self.text_encoder = NegaTextEncoder(clip_model)
-        if CUDA_ENABLED: 
-            self.text_encoder = self.text_encoder.cuda()
+        self.image_encoder = clip_model.visual.to(device)
+        self.text_encoder = NegaTextEncoder(clip_model).to(device)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.classnames = classnames
@@ -285,7 +276,7 @@ class NegPromptCustomCLIP(nn.Module):
     # text_features: [nclass * 1+n_nega_ctx, 512]
     def forward_negative(self, image): 
         print("Reached forward_negative in NegPromptCustomCLIP")
-        image_features = self.image_encoder(image.type(self.dtype))
+        image_features = self.image_encoder(image.to(device).type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         negative_prompts = self.prompt_learner.forward_negative()    # use negative prompts only
         negative_tokenized_prompts = self.prompt_learner.negative_tokenized_prompts
@@ -316,7 +307,7 @@ class NegPrompt(TrainerX):
         classnames = self.dm.dataset.classnames
 
         print(f"Loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
-        clip_model = load_clip_to_cpu(cfg)
+        clip_model = load_clip_to_cpu(cfg).to(device)
         print(f"Successfully loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
         print('-' * 80)
 
@@ -326,7 +317,7 @@ class NegPrompt(TrainerX):
         
         # Re-implemented NegPromt's CustomClip()
         print("Building NegPrompt's custom CLIP")
-        self.model = NegPromptCustomCLIP(cfg, classnames, clip_model)
+        self.model = NegPromptCustomCLIP(cfg, classnames, clip_model).to(device)
         print(f"Successfully building NegPrompt's custom CLIP")
         print('-' * 80)
 
@@ -342,7 +333,7 @@ class NegPrompt(TrainerX):
         if cfg.MODEL.INIT_WEIGHTS:
             load_pretrained_weights(self.model.prompt_learner, cfg.MODEL.INIT_WEIGHTS)
 
-        self.model.to(self.device)
+        # self.model.to(self.device)
         # Only give prompt_learner to the optimizer
         self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
         self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
