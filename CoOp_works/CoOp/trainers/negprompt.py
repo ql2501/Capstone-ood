@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
+import torch.distributions as dist
 
 from dassl.engine import TRAINER_REGISTRY, TrainerX
 from dassl.metrics import compute_accuracy
@@ -24,6 +25,8 @@ from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 from datasets.classname import *
 
 _tokenizer = _Tokenizer()
+# Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Migrating helper functions from CoOp/trainers/coop.py to here
 # Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
@@ -69,8 +72,11 @@ class NegaTextEncoder(nn.Module):
         '''
         Encodes the given text prompts using the CLIP transformer.
         '''
+        print("DEBUG")
+        print(prompts.shape)
         if len(prompts.shape) == 4:
             prompts = torch.flatten(prompts, start_dim=0, end_dim=1)
+        print(prompts.shape)
         x = prompts + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND (n_class*(1+n_neg)) * n_ctx * dim 
         if self.attn_mask is not None:
@@ -83,9 +89,6 @@ class NegaTextEncoder(nn.Module):
         x = x[torch.arange(x.shape[0]), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
 
         return x
-
-# Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 '''
 暂时只migrate过来了init function to unblock build_model
@@ -204,9 +207,31 @@ class NegaPromptLearner(nn.Module):
     def forward(self):
         pass
 
-    # TODO: further check if forward_positive is needed. If not discard it
+    # Returns the prompt vectors for the positive class names.
     def forward_positive(self):
-        pass
+        print("Reached forward_positive in NegaPromptLearner")
+        ctx_positive = self.ctx_positive
+        if ctx_positive.dim() == 3:
+            ctx = ctx_positive.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
+        else:
+            ctx = ctx_positive
+        prefix = self.positive_token_prefix
+        suffix = self.positive_token_suffix
+        print("HERE")
+        print(prefix.shape)
+        print(ctx.shape)
+        print(suffix.shape)
+        prompts = torch.cat(
+            [
+                prefix,  # (n_cls,1+n_neg, 1, dim)
+                ctx,     # (n_cls,1+n_neg, n_ctx, dim)
+                suffix,  # (n_cls,1+n_neg, *, dim)
+            ],
+            dim = 2,
+        )
+        print("DEBUG2:")
+        print(prompts.shape)
+        return prompts
     
     # Returns the prompt vectors for the negative class names only.
     def forward_negative(self):
@@ -228,8 +253,22 @@ class NegaPromptLearner(nn.Module):
         )
         return prompts
 
+    # Update the positive context vectors by given ctx_posi, and generate negative context vectors.
+    # "ctx_posi" is a torch.Tensor
     def update_ctx_positive(self, ctx_posi):
-        pass
+        noise_range = 1e-5
+        noise_dist = dist.Uniform(low=-noise_range, high=noise_range, )
+        if ctx_posi.dim() == 2: 
+            ctx_posi = ctx_posi.unsqueeze(0)
+        if self.csc == 1:
+            ctx_negative_repeated = ctx_posi.repeat(1, self.n_nega_ctx, 1, 1)
+        else:
+            ctx_negative_repeated = ctx_posi.repeat(self.n_nega_ctx, 1, 1)
+        ctx_negative = ctx_negative_repeated + noise_dist.sample(ctx_negative_repeated.shape).to(self.ctx_negative.device)
+        ctx_negative = ctx_negative.half()
+        self.ctx_positive = nn.Parameter(ctx_posi, requires_grad=False)
+        self.ctx_negative = nn.Parameter(ctx_negative, requires_grad=True)
+        print(f"After update, the shape of ctx_positive is {self.ctx_positive.shape}")
     
     def update_ctx_negative(self, ctx_nega):
         pass
@@ -238,7 +277,7 @@ class NegaPromptLearner(nn.Module):
         pass
 
     def get_ctx_positive(self):
-        pass
+        return self.ctx_positive
 
 '''
 Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
@@ -289,6 +328,15 @@ class NegPromptCustomCLIP(nn.Module):
         logit_scale = self.logit_scale.exp()
         logits = (logit_scale * image_features @ text_features.t())
         return logits, text_features
+
+    # Use ctx_posi to update the positive context vectors, and generate negative context vectors.
+    # Then get the positive text features by CLIP text encoder into positive_text_features.
+    def get_ctx_posi(self, ctx_posi):
+        self.prompt_learner.update_ctx_positive(ctx_posi)
+        # get positive_text_features
+        prompts = self.prompt_learner.forward_positive() # Returns the prompt vectors for the positive class names.
+        tokenized_prompts = self.prompt_learner.positive_tokenized_prompts
+        self.positive_text_features = self.text_encoder(prompts, tokenized_prompts) # get text embedding for positive prompts by CLIP transformer
 
 '''
     Migrate NegaPromptCLIP to the following NegPrompt class
@@ -347,6 +395,22 @@ class NegPrompt(TrainerX):
 
         print("Finished building model NegPrompt")
 
+    # Qi: choose to load positive prompts here 
+    def before_train(self):
+        # still need to call before_train in Dassl
+        super().before_train()
+        
+        # load
+        # NOTE: this path目前是写死的，之后看看要不要变成一个参数存在cfg里
+        model_positive_path = "output/imagenet/CoOp/vit_b16_ep50_16shots/nctx16_cscFalse_ctpend/seed1/prompt_learner/model.pth.tar-50"
+        print(f"Start loading positive prompts from model path {model_positive_path}")
+        saved_model = torch.load(model_positive_path, map_location=torch.device(device))
+        print("Loaded positive prompts: ")
+        print(saved_model['state_dict']['ctx'])
+        self.model.get_ctx_posi(saved_model['state_dict']['ctx'])
+        print('Positive prompt from Pretrained CoOp loaded')
+        del saved_model
+
     # dummy method 
     def load_model(self, directory, epoch=None): 
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
@@ -372,6 +436,7 @@ class NegPrompt(TrainerX):
     def after_epoch(self):
         pass
 
-    # dummy train
+    # Qi: dummy train for debugging (我不觉得需要override这个)
     def train(self): 
         print("Calling train")
+        self.before_train()

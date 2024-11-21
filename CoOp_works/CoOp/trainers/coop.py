@@ -44,6 +44,9 @@ class TextEncoder(nn.Module):
         self.dtype = clip_model.dtype
 
     def forward(self, prompts, tokenized_prompts):
+        print("DEBUG")
+        print(prompts.shape)
+        print(self.positional_embedding.type(self.dtype).shape)
         x = prompts + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
