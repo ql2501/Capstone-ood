@@ -72,8 +72,6 @@ class NegaTextEncoder(nn.Module):
         '''
         Encodes the given text prompts using the CLIP transformer.
         '''
-        print("DEBUG")
-        print(prompts.shape)
         if len(prompts.shape) == 4:
             prompts = torch.flatten(prompts, start_dim=0, end_dim=1)
         print(prompts.shape)
@@ -165,7 +163,7 @@ class NegaPromptLearner(nn.Module):
         name_lens = [len(_tokenizer.encode(name)) for name in classnames]
         positive_prompts = [prompt_prefix + " " +  name   for name in classnames]
         negative_prompts = [prompt_prefix + " " + name  for name in classnames]     # same as positive prompts
-            
+        # breakpoint()
         positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts]).to(device)
         negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts]).to(device)
         # tokenized_prompts:
@@ -217,10 +215,6 @@ class NegaPromptLearner(nn.Module):
             ctx = ctx_positive
         prefix = self.positive_token_prefix
         suffix = self.positive_token_suffix
-        print("HERE")
-        print(prefix.shape)
-        print(ctx.shape)
-        print(suffix.shape)
         prompts = torch.cat(
             [
                 prefix,  # (n_cls,1+n_neg, 1, dim)
@@ -229,10 +223,7 @@ class NegaPromptLearner(nn.Module):
             ],
             dim = 2,
         )
-        print("DEBUG2:")
-        print(prompts.shape)
         return prompts
-    
     # Returns the prompt vectors for the negative class names only.
     def forward_negative(self):
         print("Reached forward_negative in NegaPromptLearner")
@@ -440,3 +431,8 @@ class NegPrompt(TrainerX):
     def train(self): 
         print("Calling train")
         self.before_train()
+        print("Before train done")
+        # self.before_epoch()
+        # self.run_epoch()
+        # self.after_epoch()
+        # self.after_train()
