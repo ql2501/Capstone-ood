@@ -12,6 +12,7 @@ from dassl.optim import build_optimizer, build_lr_scheduler
 
 from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
+import re
 
 _tokenizer = _Tokenizer()
 
@@ -61,18 +62,23 @@ class PromptLearner(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
         n_cls = len(classnames)
-        n_ctx = cfg.TRAINER.COOP.N_CTX
-        ctx_init = cfg.TRAINER.COOP.CTX_INIT
+        n_ctx = cfg.TRAINER.COOP.N_CTX # default 16
+        ctx_init = cfg.TRAINER.COOP.CTX_INIT # default ''
         dtype = clip_model.dtype
         ctx_dim = clip_model.ln_final.weight.shape[0]
         clip_imsize = clip_model.visual.input_resolution
         cfg_imsize = cfg.INPUT.SIZE[0]
         assert cfg_imsize == clip_imsize, f"cfg_imsize ({cfg_imsize}) must equal to clip_imsize ({clip_imsize})"
 
-        if ctx_init:
+        if ctx_init: # wont enter this branch in default
             # use given words to initialize context vectors
             ctx_init = ctx_init.replace("_", " ")
-            n_ctx = len(ctx_init.split(" "))
+            ctx_init = ctx_init.replace("\"{}\"", "")
+            ctx_init = ctx_init.replace(".", "")
+            words = re.findall(r'\b\w+\b', ctx_init)
+            n_ctx = len(words)
+            # assume this is 'a photo of a "{}"', 
+            # n_ctx = len(ctx_init.split(" "))
             prompt = clip.tokenize(ctx_init)
             with torch.no_grad():
                 embedding = clip_model.token_embedding(prompt).type(dtype)
@@ -98,6 +104,7 @@ class PromptLearner(nn.Module):
         classnames = [name.replace("_", " ") for name in classnames]
         name_lens = [len(_tokenizer.encode(name)) for name in classnames]
         prompts = [prompt_prefix + " " + name + "." for name in classnames]
+
 
         tokenized_prompts = torch.cat([clip.tokenize(p) for p in prompts])
         with torch.no_grad():
