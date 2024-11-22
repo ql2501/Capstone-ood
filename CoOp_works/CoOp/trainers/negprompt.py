@@ -23,6 +23,10 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 from datasets.classname import *
+from trainers.negprompt_utils import compute_oscr, compute_fpr, metric_ood
+
+from tqdm import tqdm
+import numpy as np
 
 _tokenizer = _Tokenizer()
 # Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
@@ -204,8 +208,52 @@ class NegaPromptLearner(nn.Module):
         self.name_lens = name_lens
         self.class_token_position = "end"
 
-    def forward(self):
-        pass
+    def forward(self, modify_to_ori = None):
+        '''
+        Returns the prompt vectors that contains both positive and negative prompts.
+        Called when testing or validating the model.
+        '''
+        # modify_to_ori is a dic that transform the modified labels to original ones. This maybe used when sample 10 classes from 1k classes.
+        ctx_positive = self.ctx_positive
+        # print('ctx_positive', ctx_positive.shape)
+        ctx_negative = self.ctx_negative
+        # ctx_negative = ctx_negative[0:1, 0:1, :].repeat(ctx_negative.shape[0], ctx_negative.shape[1], 1)
+        # make ctx_negative[0,0,:] to ctx_negative
+        if ctx_negative.shape[0] == 0:
+            if ctx_positive.dim() == 3:
+                ctx = ctx_positive.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
+            else:
+                ctx = ctx_positive
+        else:   
+            if ctx_positive.dim() == 3:
+                diff = ctx_positive.shape[1] - ctx_negative.shape[1]
+                additional_rows = torch.zeros((ctx_negative.shape[0], diff, ctx_negative.shape[2]) ).cuda()
+                additional_rows = additional_rows.to(ctx_negative.dtype)
+                ctx_negative = torch.cat([additional_rows, ctx_negative], dim=1)
+                ctx = torch.cat([ctx_positive, ctx_negative], dim=0)
+                ctx = ctx.unsqueeze(0).expand(self.n_cls, -1, -1, -1)   # shape: (n_cls, 1+n_neg, n_ctx, dim)
+            else:
+                ctx = torch.cat([ctx_positive, ctx_negative], dim=1)    # train them together
+        prefix = self.token_prefix
+        suffix = self.token_suffix
+
+        if modify_to_ori is not None:
+            # modify_to_ori is a dic that transform the modified labels to original ones
+            # This maybe used when sample 10 classes from 1k classes.
+            ori_labels = list(modify_to_ori.values())
+            ctx = ctx[ori_labels]   # only keep the classes needed TODO: check if this is correct
+            prefix = prefix[ori_labels]
+            suffix = suffix[ori_labels]
+        prompts = torch.cat(
+            [
+                prefix,  # (n_cls,1+n_neg, 1, dim)
+                ctx,     # (n_cls,1+n_neg, n_ctx, dim)
+                suffix,  # (n_cls,1+n_neg, *, dim)
+            ],
+            dim = 2,
+        )
+        
+        return prompts
 
     # Returns the prompt vectors for the positive class names.
     def forward_positive(self):
@@ -339,6 +387,14 @@ class NegPromptCustomCLIP(nn.Module):
         tokenized_prompts = self.prompt_learner.positive_tokenized_prompts
         self.positive_text_features = self.text_encoder(prompts, tokenized_prompts) # get text embedding for positive prompts by CLIP transformer
 
+    def forward_test(self, image, text_features=None):
+        '''The forward method for testing, need input trianed text_features'''
+        image_features = self.image_encoder(image.type(self.dtype))
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        logit_scale = self.logit_scale.exp()
+        logits = (logit_scale * image_features @ text_features.t())
+        return logits, text_features
+
 '''
     Migrate NegaPromptCLIP to the following NegPrompt class
 ''' 
@@ -424,9 +480,177 @@ class NegPrompt(TrainerX):
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
         raise NotImplementedError
 
+    def get_ood_score(self, logits):
+        '''logits shape: (batch_size, n_classes * (1+n_nega_ctx))
+
+        Return: predictions, ood_score, logits_posi, logits_negas'''
+        # logits shape: (batch_size, n_classes * (1+n_nega_ctx))
+        n_nega_ctx = self.model.n_nega_ctx
+        softmax_logits = F.softmax(logits, dim=1)
+        softmax_logits = softmax_logits.view(-1, int(softmax_logits.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx) # (batch_size, n_classes, 1+n_nega_ctx)
+        logits = logits.view(-1, int(logits.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx) # (batch_size, n_classes, 1+n_nega_ctx)
+        
+        softmax_logits_posi = softmax_logits[:, :, 0]   # (batch_size, n_classes)
+        softmax_logits_negas = softmax_logits[:, :, 1:]
+        logits_posi = logits[:, :, 0]   # (batch_size, n_classes)
+        logits_negas = logits[:, :, 1:]
+        predictions = softmax_logits_posi.data.max(1)[1]    # (batch_size,)
+
+        if self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'msp':  # maximum softmax probability, NOTE: now using this one
+            ood_score = softmax_logits_posi.data.cpu().numpy()  # (batch_size, n_classes)
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'maxlogit':
+            ood_score = logits_posi.data.cpu().numpy()  # (batch_size, n_classes)
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'energy_oe':
+            # calculate energy-based OOD score
+            energy = torch.log(torch.sum(torch.exp(logits_posi), dim=1)).unsqueeze(1).cpu().numpy() # (batch_size, 1)
+            ood_score = energy
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'nega':
+            ood_score = softmax_logits_negas.data.max(2)[0].cpu().numpy()   # (batch_size, n_classes)
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'posi_nega':  # 计算正样本部分的 softmax 概率减去负样本部分的最大 softmax 概率作为 OOD 分数。
+            nega_dis = torch.Tensor(softmax_logits_posi.shape[0]).cuda()    # (batch_size,)
+            for i in range(softmax_logits_posi.shape[0]):
+                nega_dis[i] = torch.max(softmax_logits_negas[i, predictions[i], :])
+            nega_dis = nega_dis.view(-1, 1)
+            nega_dis = nega_dis.repeat(1, softmax_logits_posi.shape[1])
+            posi_minus_nega = softmax_logits_posi - nega_dis
+            ood_score = posi_minus_nega.data.cpu().numpy()
+        # NOTE: disable this two because we don't have radius function
+        # elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'posi_minus_closest_radius':  # 计算正样本部分的 softmax 概率减去最近的半径值作为 OOD 分数。radius计算在models/models.py
+        #     _, min_loc = torch.min(softmax_logits_negas, dim=2)
+        #     index1 = torch.arange(min_loc.shape[1])
+        #     index1 = index1.repeat(min_loc.shape[0]).cuda()
+        #     index2 = min_loc.flatten().cuda()
+        #     right_radius = radius[index1, index2].view(min_loc.shape[0], min_loc.shape[1]).cuda()
+        #     posi_minus_radius = right_radius - softmax_logits_posi
+        #     ood_score = posi_minus_radius.data.cpu().numpy()
+        # elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'posi_radius':
+        #     #right_radius(logits_posi.shape[0] * right_radius.shape[0]) is repeated by radius_mean\
+        #     right_radius = radius_mean.expand((softmax_logits_posi.shape[0], -1)).cuda()
+        #     posi_minus_radius = right_radius - softmax_logits_posi
+        #     ood_score = posi_minus_radius.data.cpu().numpy()
+        else:
+            raise ValueError('Unknown open score type: {}'.format(self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE))
+        return predictions, ood_score, logits_posi, logits_negas
+
     # dummy method 
-    def test(self): 
+    # TODO: test_clip.test_nega_clip(), modify input and output
+    def test(self, split=None): 
+        '''
+        From test_nega_clip in test_clip.py
+        split: str, optional, "val" or "test"
+        return results: dict with keys: ['ACC', 'AUPR', 'OSCR', 'FPR95', 'TNR', 'AUROC', 'DTACC', 'AUIN', 'AUOUT']
+        '''
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
+        # from SimpleTrainer.test()
+        self.set_model_mode("eval")
+        # self.evaluator.reset()    # TODO: no evaluator yet
+
+        if split is None:
+            split = self.cfg.TEST.SPLIT
+
+        if split == "val" and self.val_loader is not None:
+            testloader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            testloader = self.test_loader        
+
+        # from test_nega_clip
+        correct, total = 0, 0
+        _pred_k, _pred_u, _labels = [], [], []
+        logits_posi_id, logits_nega_id, logits_posi_ood, logits_nega_ood = [], [], [], []
+        self.model.eval()
+        with torch.no_grad():
+            # load trained text features (pos and neg?)
+            if torch.cuda.device_count() > 1:
+                prompts = self.model.module.prompt_learner()
+                tokenized_prompts = self.model.module.tokenized_prompts
+                text_features = self.model.module.text_encoder(prompts, tokenized_prompts)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            else:
+                prompts = self.model.prompt_learner()
+                tokenized_prompts = self.model.tokenized_prompts
+                text_features = self.model.text_encoder(prompts, tokenized_prompts)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            torch.cuda.empty_cache()
+            # breakpoint()
+
+            # load test ID data
+            tqdm_object = tqdm(testloader, total=len(testloader))
+            # batch test
+            for self.batch_idx, batch in enumerate(tqdm_object):
+                data, labels = self.parse_batch_test(batch)
+                # get prediction logits
+                if torch.cuda.device_count() > 1:
+                    logits, _ = self.model.module.forward_test(data, text_features)
+                    logits /= self.model.module.logit_scale.exp()
+                else:
+                    logits, _ = self.model.forward_test(data, text_features)
+                    logits /= self.model.logit_scale.exp()
+                # get metrics
+                predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
+                # here the ood_score is in the shape of logits, it's hard to understand
+                _pred_k.append(ood_score)   # known class prediction
+                correct += (predictions == labels.data).sum()
+                total += labels.size(0)
+                _labels.append(labels.data.cpu().numpy())
+                logits_posi_id.append(logits_posi.data.cpu().numpy())
+                logits_nega_id.append(logits_negas.data.cpu().numpy())
+            acc = float(correct) * 100. / float(total)
+            print('Acc: {:.5f}'.format(acc))
+
+            # load test OOD data
+            # TODO: outloader is OOD data loader, it's not implemented in dataloader yet.
+            outloader = None
+            outloader = testloader  # this is temporary! for debugging
+            assert outloader is not None, "It seems that outloader is not implemented yet. Can't use test now."
+            tqdm_object = tqdm(outloader, total=len(outloader))
+            for self.batch_idx, batch in enumerate(tqdm_object):
+                data, labels = self.parse_batch_test(batch)
+                
+                with torch.set_grad_enabled(False):
+                    if torch.cuda.device_count() > 1:
+                        logits, _ = self.model.module.forward_test(data, text_features)
+                        logits /= self.model.module.logit_scale.exp()
+                    else:
+                        logits, _ = self.model.forward_test(data, text_features)
+                        logits /= self.model.logit_scale.exp()
+                    predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
+                    # here the ood_score is in the shape of logits, it's hard to understand
+                    _pred_u.append(ood_score)   # unknown class prediction
+                    logits_posi_ood.append(logits_posi.data.cpu().numpy())
+                    logits_nega_ood.append(logits_negas.data.cpu().numpy())
+                    
+        acc = float(correct) * 100. / float(total)
+        print('Acc: {:.5f}'.format(acc))
+
+        _pred_k = np.concatenate(_pred_k, 0)
+        _pred_u = np.concatenate(_pred_u, 0)
+        _labels = np.concatenate(_labels, 0)
+        
+        # Out-of-Distribution detction evaluation
+        x1, x2 = np.max(_pred_k, axis=1), np.max(_pred_u, axis=1)   # get the max value of each row. shape: (data size,)
+        results = metric_ood(x1, x2)['Bas']
+        
+        # save _pred_k, -pred_u
+        # score_dic = {}
+        # score_dic['pred_k'] = _pred_k
+        # score_dic['pred_u'] = _pred_u
+        # score_dic['logits_posi_id'] = np.concatenate(logits_posi_id, 0)
+        # score_dic['logits_nega_id'] = np.concatenate(logits_nega_id, 0)
+        # score_dic['logits_posi_ood'] = np.concatenate(logits_posi_ood, 0)
+        # score_dic['logits_nega_ood'] = np.concatenate(logits_nega_ood, 0)
+        # np.save('savescores/' + options['dataset'] + '_ score_dic.npy', score_dic)
+        # OSCR
+        _oscr_socre = compute_oscr(_pred_k, _pred_u, _labels)
+
+        auroc, aupr, fpr95 = compute_fpr(x1, x2)
+        results['ACC'] = acc
+        results['OSCR'] = _oscr_socre * 100.
+        results['FPR95'] = fpr95 * 100.
+        results['AUPR'] = aupr * 100.   
+        print('ACC: {:.5f}, OSCR: {:.5f}, FPR95: {:.5f}, AUPR: {:.5f}, TNR: {:.5f}, AUROC: {:.5f}, DTACC: {:.5f}, AUIN: {:.5f}, AUOUT: {:.5f}'.format(
+            results['ACC'], results['OSCR'], results['FPR95'], results['AUPR'], results['TNR'], results['AUROC'], results['DTACC'], results['AUIN'], results['AUOUT']))
+        return results['ACC']  # TODO: check what should be returned    
 
     def get_NND_loss(self, negative_text_features):
         '''Calculate the loss for negative-negative distance'''
@@ -633,9 +857,9 @@ class NegPrompt(TrainerX):
 
     #         end = time.time()
     
-    # TODO: template from Dassl, need to modify for negprompt
-    def after_epoch(self):
-        pass
+    # NOTE: template from Dassl, may not need to modify
+    # def after_epoch(self):
+    #     pass    # TODO: remove this when test is implemented
     #     last_epoch = (self.epoch + 1) == self.max_epoch
     #     do_test = not self.cfg.TEST.NO_TEST
     #     meet_checkpoint_freq = (
@@ -658,8 +882,28 @@ class NegPrompt(TrainerX):
     #     if meet_checkpoint_freq or last_epoch:
     #         self.save_model(self.epoch, self.output_dir)
 
-    def after_train(self):
-        pass
+    # template from Dassl
+    # TODO: add drawing tsne graph
+    # def after_train(self):
+    #     pass
+        #print("Finish training")
+
+        # do_test = not self.cfg.TEST.NO_TEST
+        # if do_test:
+        #     if self.cfg.TEST.FINAL_MODEL == "best_val":
+        #         print("Deploy the model with the best val performance")
+        #         self.load_model(self.output_dir)
+        #     else:
+        #         print("Deploy the last-epoch model")
+        #     self.test()
+
+        # # Show elapsed time
+        # elapsed = round(time.time() - self.time_start)
+        # elapsed = str(datetime.timedelta(seconds=elapsed))
+        # print(f"Elapsed: {elapsed}")
+
+        # # Close writer
+        # self.close_writer()
 
     # Qi: dummy train for debugging (我不觉得需要override这个)
     # Yilan: example train from dassl's training base class
@@ -675,5 +919,6 @@ class NegPrompt(TrainerX):
             self.run_epoch()
             print("Run epoch done")
             self.after_epoch()
+            print("After epoch done")
         self.after_train()
         print("Train done")
