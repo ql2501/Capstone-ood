@@ -1,0 +1,67 @@
+1. How does dataloader's output looks like in NegPrompt:
+
+class DatasetFolder(VisionDataset):
+     Attributes:
+        classes (list): List of the class names sorted alphabetically.
+        class_to_idx (dict): Dict with items (class_name, class_index).
+        samples (list): List of (sample path, class_index) tuples
+        **targets (list): The class_index value for each image in the dataset
+
+    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        path, target = self.samples[index]
+        sample = self.loader(path)
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return sample, target
+
+ImageFolder(DatasetFolder):
+     Attributes:
+        classes (list): List of the class names sorted alphabetically.
+        class_to_idx (dict): Dict with items (class_name, class_index).
+        **imgs (list): List of (image path, class_index) tuples
+
+class Tiny_ImageNet_Filter(ImageFolder):
+	Filter function：把原来的class index改为known classes里面重新编号的class index
+
+class Tiny_ImageNet_OSR(object):
+        trainset = Tiny_ImageNet_Filter(os.path.join(dataroot, 'tiny-imagenet-200', 'train'), train_transform)
+        self.train_loader = torch.utils.data.DataLoader(
+            trainset, batch_size=batch_size, shuffle=True,
+            num_workers=num_workers, pin_memory=pin_memory,
+        )
+
+
+2. NegPrompt里面positive suffix的产生：
+
+ctx_init = cfg['CTX_INIT']
+if ctx_init: 
+	prompt_prefix = ctx_init
+else:
+	prompt_prefix = " ".join(["X"] * n_ctx)
+positive_prompts = [prompt_prefix + " " +  name   for name in classnames]
+positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts]).cuda()
+positive_embedding = clip_model.token_embedding(positive_tokenized_prompts).type(dtype)
+embedding = torch.cat([positive_embedding, negative_embedding], dim=1)
+"positive_token_suffix" = embedding[:, :1, 1 + n_ctx :, :]
+
+3. CoOp里面positive suffix:
+ctx_init = cfg.TRAINER.COOP.CTX_INIT	
+if ctx_init: 
+	prompt_prefix = ctx_init
+else:
+	prompt_prefix = " ".join(["X"] * n_ctx)
+prompts = [prompt_prefix + " " + name + "." for name in classnames]
+tokenized_prompts = torch.cat([clip.tokenize(p) for p in prompts])
+embedding = clip_model.token_embedding(tokenized_prompts).type(dtype)
+self.register_buffer("token_suffix", embedding[:, 1 + n_ctx :, :])  # CLS, EOS
+

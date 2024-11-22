@@ -23,10 +23,16 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 from datasets.classname import *
+from trainers.negprompt_utils import compute_oscr, compute_fpr, metric_ood
+
+from tqdm import tqdm
+import numpy as np
 
 _tokenizer = _Tokenizer()
 # Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+DEBUG = False    # Yilan: this is for debugging purpose
 
 # Migrating helper functions from CoOp/trainers/coop.py to here
 # Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
@@ -74,7 +80,7 @@ class NegaTextEncoder(nn.Module):
         '''
         if len(prompts.shape) == 4:
             prompts = torch.flatten(prompts, start_dim=0, end_dim=1)
-        print(prompts.shape)
+        # print(prompts.shape)
         x = prompts + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND (n_class*(1+n_neg)) * n_ctx * dim 
         if self.attn_mask is not None:
@@ -202,8 +208,52 @@ class NegaPromptLearner(nn.Module):
         self.name_lens = name_lens
         self.class_token_position = "end"
 
-    def forward(self):
-        pass
+    def forward(self, modify_to_ori = None):
+        '''
+        Returns the prompt vectors that contains both positive and negative prompts.
+        Called when testing or validating the model.
+        '''
+        # modify_to_ori is a dic that transform the modified labels to original ones. This maybe used when sample 10 classes from 1k classes.
+        ctx_positive = self.ctx_positive
+        # print('ctx_positive', ctx_positive.shape)
+        ctx_negative = self.ctx_negative
+        # ctx_negative = ctx_negative[0:1, 0:1, :].repeat(ctx_negative.shape[0], ctx_negative.shape[1], 1)
+        # make ctx_negative[0,0,:] to ctx_negative
+        if ctx_negative.shape[0] == 0:
+            if ctx_positive.dim() == 3:
+                ctx = ctx_positive.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
+            else:
+                ctx = ctx_positive
+        else:   
+            if ctx_positive.dim() == 3:
+                diff = ctx_positive.shape[1] - ctx_negative.shape[1]
+                additional_rows = torch.zeros((ctx_negative.shape[0], diff, ctx_negative.shape[2]) ).cuda()
+                additional_rows = additional_rows.to(ctx_negative.dtype)
+                ctx_negative = torch.cat([additional_rows, ctx_negative], dim=1)
+                ctx = torch.cat([ctx_positive, ctx_negative], dim=0)
+                ctx = ctx.unsqueeze(0).expand(self.n_cls, -1, -1, -1)   # shape: (n_cls, 1+n_neg, n_ctx, dim)
+            else:
+                ctx = torch.cat([ctx_positive, ctx_negative], dim=1)    # train them together
+        prefix = self.token_prefix
+        suffix = self.token_suffix
+
+        if modify_to_ori is not None:
+            # modify_to_ori is a dic that transform the modified labels to original ones
+            # This maybe used when sample 10 classes from 1k classes.
+            ori_labels = list(modify_to_ori.values())
+            ctx = ctx[ori_labels]   # only keep the classes needed TODO: check if this is correct
+            prefix = prefix[ori_labels]
+            suffix = suffix[ori_labels]
+        prompts = torch.cat(
+            [
+                prefix,  # (n_cls,1+n_neg, 1, dim)
+                ctx,     # (n_cls,1+n_neg, n_ctx, dim)
+                suffix,  # (n_cls,1+n_neg, *, dim)
+            ],
+            dim = 2,
+        )
+        
+        return prompts
 
     # Returns the prompt vectors for the positive class names.
     def forward_positive(self):
@@ -262,10 +312,12 @@ class NegaPromptLearner(nn.Module):
         print(f"After update, the shape of ctx_positive is {self.ctx_positive.shape}")
     
     def update_ctx_negative(self, ctx_nega):
-        pass
+        ''' Set the negative context vectors to ctx_nega.'''
+        self.ctx_negative = nn.Parameter(ctx_nega, requires_grad=False)
 
     def freeze_ctx_positive(self):
-        pass
+        '''Freeze the positive context vectors to self.ctx_positive.'''
+        self.ctx_positive = nn.Parameter(self.ctx_positive, requires_grad=False)
 
     def get_ctx_positive(self):
         return self.ctx_positive
@@ -301,6 +353,12 @@ class NegPromptCustomCLIP(nn.Module):
     # logits: [batch_size, nclass * 1+n_nega_ctx]
     # text_features: [nclass * 1+n_nega_ctx, 512]
     def forward_negative(self, image): 
+        '''Only learn the negative prompts
+        return shape:
+        logits: [batch_size, nclass * 1+n_nega_ctx]
+        text_features: [nclass * 1+n_nega_ctx, 512]
+        image: [batch_size, 3, 224, 224]
+        '''
         print("Reached forward_negative in NegPromptCustomCLIP")
         image_features = self.image_encoder(image.to(device).type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
@@ -329,6 +387,14 @@ class NegPromptCustomCLIP(nn.Module):
         tokenized_prompts = self.prompt_learner.positive_tokenized_prompts
         self.positive_text_features = self.text_encoder(prompts, tokenized_prompts) # get text embedding for positive prompts by CLIP transformer
 
+    def forward_test(self, image, text_features=None):
+        '''The forward method for testing, need input trianed text_features'''
+        image_features = self.image_encoder(image.type(self.dtype))
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        logit_scale = self.logit_scale.exp()
+        logits = (logit_scale * image_features @ text_features.t())
+        return logits, text_features
+
 '''
     Migrate NegaPromptCLIP to the following NegPrompt class
 ''' 
@@ -354,6 +420,7 @@ class NegPrompt(TrainerX):
         # Re-implemented NegPromt's CustomClip()
         print("Building NegPrompt's custom CLIP")
         self.model = NegPromptCustomCLIP(cfg, classnames, clip_model).to(device)
+        self.n_cls = len(classnames)    # just to debug
         print(f"Successfully building NegPrompt's custom CLIP")
         print('-' * 80)
 
@@ -388,6 +455,11 @@ class NegPrompt(TrainerX):
 
     # Qi: choose to load positive prompts here 
     def before_train(self):
+        '''
+        Load positive prompts from a pretrained model
+        self.positive_text_features is updated
+        self.ctx_positive is updated
+        self.ctx_negative is updated'''
         # still need to call before_train in Dassl
         super().before_train()
         
@@ -404,35 +476,449 @@ class NegPrompt(TrainerX):
 
     # dummy method 
     def load_model(self, directory, epoch=None): 
+        '''This is used if we want to load a model from a checkpoint and continue to train it'''
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
+        raise NotImplementedError
+
+    def get_ood_score(self, logits):
+        '''logits shape: (batch_size, n_classes * (1+n_nega_ctx))
+
+        Return: predictions, ood_score, logits_posi, logits_negas'''
+        # logits shape: (batch_size, n_classes * (1+n_nega_ctx))
+        n_nega_ctx = self.model.n_nega_ctx
+        softmax_logits = F.softmax(logits, dim=1)
+        softmax_logits = softmax_logits.view(-1, int(softmax_logits.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx) # (batch_size, n_classes, 1+n_nega_ctx)
+        logits = logits.view(-1, int(logits.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx) # (batch_size, n_classes, 1+n_nega_ctx)
+        
+        softmax_logits_posi = softmax_logits[:, :, 0]   # (batch_size, n_classes)
+        softmax_logits_negas = softmax_logits[:, :, 1:]
+        logits_posi = logits[:, :, 0]   # (batch_size, n_classes)
+        logits_negas = logits[:, :, 1:]
+        predictions = softmax_logits_posi.data.max(1)[1]    # (batch_size,)
+
+        if self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'msp':  # maximum softmax probability, NOTE: now using this one
+            ood_score = softmax_logits_posi.data.cpu().numpy()  # (batch_size, n_classes)
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'maxlogit':
+            ood_score = logits_posi.data.cpu().numpy()  # (batch_size, n_classes)
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'energy_oe':
+            # calculate energy-based OOD score
+            energy = torch.log(torch.sum(torch.exp(logits_posi), dim=1)).unsqueeze(1).cpu().numpy() # (batch_size, 1)
+            ood_score = energy
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'nega':
+            ood_score = softmax_logits_negas.data.max(2)[0].cpu().numpy()   # (batch_size, n_classes)
+        elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'posi_nega':  # 计算正样本部分的 softmax 概率减去负样本部分的最大 softmax 概率作为 OOD 分数。
+            nega_dis = torch.Tensor(softmax_logits_posi.shape[0]).cuda()    # (batch_size,)
+            for i in range(softmax_logits_posi.shape[0]):
+                nega_dis[i] = torch.max(softmax_logits_negas[i, predictions[i], :])
+            nega_dis = nega_dis.view(-1, 1)
+            nega_dis = nega_dis.repeat(1, softmax_logits_posi.shape[1])
+            posi_minus_nega = softmax_logits_posi - nega_dis
+            ood_score = posi_minus_nega.data.cpu().numpy()
+        # NOTE: disable this two because we don't have radius function
+        # elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'posi_minus_closest_radius':  # 计算正样本部分的 softmax 概率减去最近的半径值作为 OOD 分数。radius计算在models/models.py
+        #     _, min_loc = torch.min(softmax_logits_negas, dim=2)
+        #     index1 = torch.arange(min_loc.shape[1])
+        #     index1 = index1.repeat(min_loc.shape[0]).cuda()
+        #     index2 = min_loc.flatten().cuda()
+        #     right_radius = radius[index1, index2].view(min_loc.shape[0], min_loc.shape[1]).cuda()
+        #     posi_minus_radius = right_radius - softmax_logits_posi
+        #     ood_score = posi_minus_radius.data.cpu().numpy()
+        # elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'posi_radius':
+        #     #right_radius(logits_posi.shape[0] * right_radius.shape[0]) is repeated by radius_mean\
+        #     right_radius = radius_mean.expand((softmax_logits_posi.shape[0], -1)).cuda()
+        #     posi_minus_radius = right_radius - softmax_logits_posi
+        #     ood_score = posi_minus_radius.data.cpu().numpy()
+        else:
+            raise ValueError('Unknown open score type: {}'.format(self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE))
+        return predictions, ood_score, logits_posi, logits_negas
 
     # dummy method 
-    def test(self): 
+    # TODO: test_clip.test_nega_clip(), modify input and output
+    def test(self, split=None): 
+        '''
+        From test_nega_clip in test_clip.py
+        split: str, optional, "val" or "test"
+        return results: dict with keys: ['ACC', 'AUPR', 'OSCR', 'FPR95', 'TNR', 'AUROC', 'DTACC', 'AUIN', 'AUOUT']
+        '''
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
+        # from SimpleTrainer.test()
+        self.set_model_mode("eval")
+        # self.evaluator.reset()    # TODO: no evaluator yet
+
+        if split is None:
+            split = self.cfg.TEST.SPLIT
+
+        if split == "val" and self.val_loader is not None:
+            testloader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            testloader = self.test_loader        
+
+        # from test_nega_clip
+        correct, total = 0, 0
+        _pred_k, _pred_u, _labels = [], [], []
+        logits_posi_id, logits_nega_id, logits_posi_ood, logits_nega_ood = [], [], [], []
+        self.model.eval()
+        with torch.no_grad():
+            # load trained text features (pos and neg?)
+            if torch.cuda.device_count() > 1:
+                prompts = self.model.module.prompt_learner()
+                tokenized_prompts = self.model.module.tokenized_prompts
+                text_features = self.model.module.text_encoder(prompts, tokenized_prompts)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            else:
+                prompts = self.model.prompt_learner()
+                tokenized_prompts = self.model.tokenized_prompts
+                text_features = self.model.text_encoder(prompts, tokenized_prompts)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            torch.cuda.empty_cache()
+            # breakpoint()
+
+            # load test ID data
+            tqdm_object = tqdm(testloader, total=len(testloader))
+            # batch test
+            for self.batch_idx, batch in enumerate(tqdm_object):
+                data, labels = self.parse_batch_test(batch)
+                # get prediction logits
+                if torch.cuda.device_count() > 1:
+                    logits, _ = self.model.module.forward_test(data, text_features)
+                    logits /= self.model.module.logit_scale.exp()
+                else:
+                    logits, _ = self.model.forward_test(data, text_features)
+                    logits /= self.model.logit_scale.exp()
+                # get metrics
+                predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
+                # here the ood_score is in the shape of logits, it's hard to understand
+                _pred_k.append(ood_score)   # known class prediction
+                correct += (predictions == labels.data).sum()
+                total += labels.size(0)
+                _labels.append(labels.data.cpu().numpy())
+                logits_posi_id.append(logits_posi.data.cpu().numpy())
+                logits_nega_id.append(logits_negas.data.cpu().numpy())
+            acc = float(correct) * 100. / float(total)
+            print('Acc: {:.5f}'.format(acc))
+
+            # load test OOD data
+            # TODO: outloader is OOD data loader, it's not implemented in dataloader yet.
+            outloader = None
+            outloader = testloader  # this is temporary! for debugging
+            assert outloader is not None, "It seems that outloader is not implemented yet. Can't use test now."
+            tqdm_object = tqdm(outloader, total=len(outloader))
+            for self.batch_idx, batch in enumerate(tqdm_object):
+                data, labels = self.parse_batch_test(batch)
+                
+                with torch.set_grad_enabled(False):
+                    if torch.cuda.device_count() > 1:
+                        logits, _ = self.model.module.forward_test(data, text_features)
+                        logits /= self.model.module.logit_scale.exp()
+                    else:
+                        logits, _ = self.model.forward_test(data, text_features)
+                        logits /= self.model.logit_scale.exp()
+                    predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
+                    # here the ood_score is in the shape of logits, it's hard to understand
+                    _pred_u.append(ood_score)   # unknown class prediction
+                    logits_posi_ood.append(logits_posi.data.cpu().numpy())
+                    logits_nega_ood.append(logits_negas.data.cpu().numpy())
+                    
+        acc = float(correct) * 100. / float(total)
+        print('Acc: {:.5f}'.format(acc))
+
+        _pred_k = np.concatenate(_pred_k, 0)
+        _pred_u = np.concatenate(_pred_u, 0)
+        _labels = np.concatenate(_labels, 0)
+        
+        # Out-of-Distribution detction evaluation
+        x1, x2 = np.max(_pred_k, axis=1), np.max(_pred_u, axis=1)   # get the max value of each row. shape: (data size,)
+        results = metric_ood(x1, x2)['Bas']
+        
+        # save _pred_k, -pred_u
+        # score_dic = {}
+        # score_dic['pred_k'] = _pred_k
+        # score_dic['pred_u'] = _pred_u
+        # score_dic['logits_posi_id'] = np.concatenate(logits_posi_id, 0)
+        # score_dic['logits_nega_id'] = np.concatenate(logits_nega_id, 0)
+        # score_dic['logits_posi_ood'] = np.concatenate(logits_posi_ood, 0)
+        # score_dic['logits_nega_ood'] = np.concatenate(logits_nega_ood, 0)
+        # np.save('savescores/' + options['dataset'] + '_ score_dic.npy', score_dic)
+        # OSCR
+        _oscr_socre = compute_oscr(_pred_k, _pred_u, _labels)
+
+        auroc, aupr, fpr95 = compute_fpr(x1, x2)
+        results['ACC'] = acc
+        results['OSCR'] = _oscr_socre * 100.
+        results['FPR95'] = fpr95 * 100.
+        results['AUPR'] = aupr * 100.   
+        print('ACC: {:.5f}, OSCR: {:.5f}, FPR95: {:.5f}, AUPR: {:.5f}, TNR: {:.5f}, AUROC: {:.5f}, DTACC: {:.5f}, AUIN: {:.5f}, AUOUT: {:.5f}'.format(
+            results['ACC'], results['OSCR'], results['FPR95'], results['AUPR'], results['TNR'], results['AUROC'], results['DTACC'], results['AUIN'], results['AUOUT']))
+        return results['ACC']  # TODO: check what should be returned    
+
+    def get_NND_loss(self, negative_text_features):
+        '''Calculate the loss for negative-negative distance'''
+        loss_nega_to_nega = 0
+        for i in range(negative_text_features.shape[0]):    # for each class
+            negative_features = negative_text_features[i,:,:].float()   # (n_nega_ctx , 512)
+            negative_features_mean = torch.mean(negative_features, dim=0, keepdim=True)
+            negative_features_mean_norm = negative_features_mean.norm(dim=-1, keepdim=True)  # (1, 1)
+
+            # Euclidean distance
+            # loss_nega_to_nega += -sum(torch.pdist(negative_features, p=2))
+
+            # Cosine distance
+            negative_features_norm = negative_features.norm(dim=-1, keepdim=True)   # (n_nega_ctx, 1)
+            # nega_nega
+            # dot_product = negative_features_norm @ negative_features_norm.t()
+            # nega_mean
+            dot_product = negative_features_norm @ negative_features_mean_norm.t()
+            loss_nega_to_nega += -torch.mean(1-dot_product)
+        loss_nega_to_nega /= negative_text_features.shape[0]
+        return loss_nega_to_nega
+    
+    def get_NIS_loss(self, output, n_nega_ctx, labels):
+        ''' Calculate the loss for negative image similarity
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
+        loss_nega_to_other = 0
+        out_nega_forCE = output # [batch_size, nclass * 1+n_nega_ctx]
+        # create soft_target(1-hot) for negative samples and positive samples
+        soft_target = torch.zeros(out_nega_forCE.shape).long().cuda()
+        idx = torch.arange(out_nega_forCE.shape[0]).cuda()
+        # This means all classes are assigned an 1.
+        soft_target.view(soft_target.shape[0], int(output.shape[1]/(1+n_nega_ctx)), -1)[idx, labels, :] = 1 # TODO: check what is this line doing
+        # labels_nega = labels.reshape(1, -1).repeat(n_nega_ctx, 1).t().reshape(-1)
+        # if options['open_set_method'] == 'MSP': # default
+        loss_fun = nn.MultiLabelSoftMarginLoss(reduction='mean')
+        loss_nega_to_other = loss_fun(out_nega_forCE, soft_target)
+            # loss_nega_to_other = F.cross_entropy(out_nega_forCE, labels_nega)
+        # elif options['open_set_method'] == 'Fence':
+        #     loss_nega_to_other = custom_alpha_cross_entropy(out_nega_forCE, soft_target, alpha=options['fence_alpha'])
+        # elif options['open_set_method'] == 'OE':    # may be reference
+        #     loss_nega_to_other = -(out_nega_forCE.mean(1) - torch.logsumexp(out_nega_forCE, dim=1)).mean() #OE
+        return loss_nega_to_other
+    
+    def get_NPD_loss(self, positive_text_features, negative_text_features):
+        ''' Calculate the loss for negative-positive distance
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
+        loss_nega_to_posi = 0
+        all_class_dis = 0
+        for i in range(negative_text_features.shape[0]):    # for each class
+            positive_feature = positive_text_features[i:i+1,:].float()  # (1, 512)
+            negative_feature = negative_text_features[i,:,:].float()    # (n_nega_ctx, 512)
+            positive_feature_norm = positive_feature/positive_feature.norm(dim=-1, keepdim=True)
+            negative_feature_norm = negative_feature/negative_feature.norm(dim=-1, keepdim=True)
+            dot_product = positive_feature_norm @ negative_feature_norm.t()
+            mean_cosine_dis = (1-dot_product).mean()
+            all_class_dis += mean_cosine_dis
+            
+        # if options['open_set_method'] == 'MSP':
+        loss_nega_to_posi -= all_class_dis/negative_text_features.shape[0]
+        # elif options['open_set_method'] == 'Fence':
+        #     loss_nega_to_posi = 0
+        # else:
+        #     loss_nega_to_posi += all_class_dis/negative_text_features.shape[0]
+        return loss_nega_to_posi
+
 
     # 之后train应该会用到
     def forward_backward(self, batch):
-        raise NotImplementedError
+        '''Run a batch, calculate loss (NND, NIS, NPD), update model and return loss
+        Called in run_epoch
+        ---
+        batch: from iterating self.train_loader_x'''
+        n_nega_ctx = self.cfg.TRAINER.NEGPROMPT.NEGA_CTX    # TODO: to add to cfg
+        # get data and labels from batch (to device)
+        image, labels = self.parse_batch_train(batch)   # TODO: make sure the data loader is correct   
+
+        # NOTE: POMP is not used by default. Not move to here (so that not need to add config)
+        with torch.set_grad_enabled(True):  # TODO: check here
+            output, text_features = self.model(image)
+            # output.shape = [batch_size, nclass * 1+n_nega_ctx]
+            # text_features.shape = [nclass * (1+n_nega_ctx), 512]
+            output_posi = output.view(-1, int(output.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx)[:, :, 0]   # the first column is the logits for positive prompts for each class
+            ensemble_text_features = text_features.view(int(text_features.shape[0]/(1+n_nega_ctx)), 1+n_nega_ctx, -1)   # shape = [n_class, 1+n_nega_ctx, 512]
+            positive_text_features = ensemble_text_features[:, 0, :]    # shape = [n_class, 512]
+            negative_text_features = ensemble_text_features[:, 1:, :]   # shape = [n_class, n_nega_ctx, 512]
+            if DEBUG:
+                print(f"Output shape is {output.shape}, should be [batch_size, {self.n_cls*(1+n_nega_ctx)}]")
+                print(f"Text features shape is {text_features.shape}, should be [{self.n_cls*(1+n_nega_ctx)}, 512]")
+                print(f"Output positive shape is {output_posi.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE}, {self.n_cls}]")
+                print(f"Positive text features shape is {positive_text_features.shape}, should be [{self.n_cls}, 512]")
+                print(f"Negative text features shape is {negative_text_features.shape}, should be [{self.n_cls}, {n_nega_ctx}, 512]")
+
+
+            # calculate loss
+            # 0. CE loss for pos prompt (actually no used here, just to keep original code)
+            loss_positive = F.cross_entropy(output_posi, labels)
+            loss_positive *= 1e-8   # not important
+            # NOTE: prototype loss is not used by default. Not move to here.
+
+            # 1. NND loss: negative-negative distance
+            loss_nega_to_nega = self.get_NND_loss(negative_text_features)
+            if DEBUG: print(f"Loss NND done")
+
+            # 2. NIS loss: Negative image similarity
+            # NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+            loss_nega_to_other = self.get_NIS_loss(output, n_nega_ctx, labels)
+            if DEBUG: print(f"Loss NIS done")
+
+            # 3. NPD loss: Negative-Positive Distance
+            # NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+            loss_nega_to_posi = self.get_NPD_loss(positive_text_features, negative_text_features)
+            if DEBUG: print(f"Loss NPD done")
+
+            # aggregate loss: weighted by cfg. prototype loss not used here
+            loss = loss_positive \
+                + loss_nega_to_other*self.cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT \
+                + loss_nega_to_nega*self.cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT \
+                + loss_nega_to_posi*self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT 
+
+            # backward and update
+            self.model_backward_and_update(loss)
+
+        loss_summary = {
+            "loss": loss.item(),
+            "loss_positive": loss_positive.item(),
+            "NIS Loss": loss_nega_to_other.item(),
+            "NND Loss": loss_nega_to_nega.item(),
+            "NPD Loss": loss_nega_to_posi.item(),
+            # "acc": compute_accuracy(output, labels)[0].item(),    # no acc here
+        }
+        if DEBUG: print(f"Loss summary: {loss_summary}")
+
+        if (self.batch_idx + 1) == self.num_batches:
+            self.update_lr()
+
+        return loss_summary
     
     # 之后train应该会用到
+    # TODO: modify coop's function for negprompt
     def parse_batch_train(self, batch):
-        raise NotImplementedError
+        '''Parse batch for training, also move to device
+        Called in forward_backward
+        '''
+        ''' A typical data loader in NegPrompt: 
+        single item: (sample, target) where target is class_index of the target class.
+        batch input:
+        data shape = [batch_size, 3, 224, 224]
+        labels shape = [batch_size,]
+        '''
+        input = batch["img"]
+        if DEBUG: print(f"input shape is {input.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE}, 3, 224, 224]")
+        label = batch["label"]
+        if DEBUG: print(f"labels shape is {label.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE},]")
+        input = input.to(self.device)
+        label = label.to(self.device)
+        # breakpoint()
+        return input, label
     
     # Qi: 
     # TODO: need to check if we really need to override this method
-    def run_epoch(self):
-        pass
+    # NOTE: this is from trainerX template
+
+    # def run_epoch(self):
+    #     self.set_model_mode("train")
+    #     losses = MetricMeter()
+    #     batch_time = AverageMeter()
+    #     data_time = AverageMeter()
+    #     self.num_batches = len(self.train_loader_x)
+
+    #     end = time.time()
+        
+    #     for self.batch_idx, batch in enumerate(self.train_loader_x):
+    #         data_time.update(time.time() - end)
+    #         # forward, update, and get loss
+    #         loss_summary = self.forward_backward(batch)
+    #         batch_time.update(time.time() - end)
+    #         losses.update(loss_summary)
+
+    #         meet_freq = (self.batch_idx + 1) % self.cfg.TRAIN.PRINT_FREQ == 0
+    #         only_few_batches = self.num_batches < self.cfg.TRAIN.PRINT_FREQ
+    #         if meet_freq or only_few_batches:
+    #             nb_remain = 0
+    #             nb_remain += self.num_batches - self.batch_idx - 1
+    #             nb_remain += (
+    #                 self.max_epoch - self.epoch - 1
+    #             ) * self.num_batches
+    #             eta_seconds = batch_time.avg * nb_remain
+    #             eta = str(datetime.timedelta(seconds=int(eta_seconds)))
+
+    #             info = []
+    #             info += [f"epoch [{self.epoch + 1}/{self.max_epoch}]"]
+    #             info += [f"batch [{self.batch_idx + 1}/{self.num_batches}]"]
+    #             info += [f"time {batch_time.val:.3f} ({batch_time.avg:.3f})"]
+    #             info += [f"data {data_time.val:.3f} ({data_time.avg:.3f})"]
+    #             info += [f"{losses}"]
+    #             info += [f"lr {self.get_current_lr():.4e}"]
+    #             info += [f"eta {eta}"]
+    #             print(" ".join(info))
+
+    #         n_iter = self.epoch * self.num_batches + self.batch_idx
+    #         for name, meter in losses.meters.items():
+    #             self.write_scalar("train/" + name, meter.avg, n_iter)
+    #         self.write_scalar("train/lr", self.get_current_lr(), n_iter)
+
+    #         end = time.time()
     
-    # TODO
-    def after_epoch(self):
-        pass
+    # NOTE: template from Dassl, may not need to modify
+    # def after_epoch(self):
+    #     pass    # TODO: remove this when test is implemented
+    #     last_epoch = (self.epoch + 1) == self.max_epoch
+    #     do_test = not self.cfg.TEST.NO_TEST
+    #     meet_checkpoint_freq = (
+    #         (self.epoch + 1) % self.cfg.TRAIN.CHECKPOINT_FREQ == 0
+    #         if self.cfg.TRAIN.CHECKPOINT_FREQ > 0 else False
+    #     )
+
+    #     if do_test and self.cfg.TEST.FINAL_MODEL == "best_val":
+    #         curr_result = self.test(split="val")
+    #         is_best = curr_result > self.best_result
+    #         if is_best:
+    #             self.best_result = curr_result
+    #             self.save_model(
+    #                 self.epoch,
+    #                 self.output_dir,
+    #                 val_result=curr_result,
+    #                 model_name="model-best.pth.tar"
+    #             )
+
+    #     if meet_checkpoint_freq or last_epoch:
+    #         self.save_model(self.epoch, self.output_dir)
+
+    # template from Dassl
+    # TODO: add drawing tsne graph
+    # def after_train(self):
+    #     pass
+        #print("Finish training")
+
+        # do_test = not self.cfg.TEST.NO_TEST
+        # if do_test:
+        #     if self.cfg.TEST.FINAL_MODEL == "best_val":
+        #         print("Deploy the model with the best val performance")
+        #         self.load_model(self.output_dir)
+        #     else:
+        #         print("Deploy the last-epoch model")
+        #     self.test()
+
+        # # Show elapsed time
+        # elapsed = round(time.time() - self.time_start)
+        # elapsed = str(datetime.timedelta(seconds=elapsed))
+        # print(f"Elapsed: {elapsed}")
+
+        # # Close writer
+        # self.close_writer()
 
     # Qi: dummy train for debugging (我不觉得需要override这个)
-    def train(self): 
+    # Yilan: example train from dassl's training base class
+    # Yilan: don't need to override this method!
+    def train(self):
+        """dummy train for debugging, don't need to override this method!"""
         print("Calling train")
         self.before_train()
         print("Before train done")
-        # self.before_epoch()
-        # self.run_epoch()
-        # self.after_epoch()
-        # self.after_train()
+        for self.epoch in range(2):
+            self.before_epoch()
+            print("Before epoch done")
+            self.run_epoch()
+            print("Run epoch done")
+            self.after_epoch()
+            print("After epoch done")
+        self.after_train()
+        print("Train done")
