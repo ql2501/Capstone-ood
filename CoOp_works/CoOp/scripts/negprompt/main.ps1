@@ -38,3 +38,7 @@ foreach ($SEED in $SEEDS) {
 # cd CoOp_works/CoOp
 # powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force
 # powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
+
+
+# conda activate dassl && cd CoOp_works/CoOp && powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
+# powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False

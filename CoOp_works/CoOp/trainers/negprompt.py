@@ -28,6 +28,8 @@ _tokenizer = _Tokenizer()
 # Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+DEBUG = False    # Yilan: this is for debugging purpose
+
 # Migrating helper functions from CoOp/trainers/coop.py to here
 # Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
 def load_clip_to_cpu(cfg):
@@ -74,7 +76,7 @@ class NegaTextEncoder(nn.Module):
         '''
         if len(prompts.shape) == 4:
             prompts = torch.flatten(prompts, start_dim=0, end_dim=1)
-        print(prompts.shape)
+        # print(prompts.shape)
         x = prompts + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND (n_class*(1+n_neg)) * n_ctx * dim 
         if self.attn_mask is not None:
@@ -262,10 +264,12 @@ class NegaPromptLearner(nn.Module):
         print(f"After update, the shape of ctx_positive is {self.ctx_positive.shape}")
     
     def update_ctx_negative(self, ctx_nega):
-        pass
+        ''' Set the negative context vectors to ctx_nega.'''
+        self.ctx_negative = nn.Parameter(ctx_nega, requires_grad=False)
 
     def freeze_ctx_positive(self):
-        pass
+        '''Freeze the positive context vectors to self.ctx_positive.'''
+        self.ctx_positive = nn.Parameter(self.ctx_positive, requires_grad=False)
 
     def get_ctx_positive(self):
         return self.ctx_positive
@@ -301,6 +305,12 @@ class NegPromptCustomCLIP(nn.Module):
     # logits: [batch_size, nclass * 1+n_nega_ctx]
     # text_features: [nclass * 1+n_nega_ctx, 512]
     def forward_negative(self, image): 
+        '''Only learn the negative prompts
+        return shape:
+        logits: [batch_size, nclass * 1+n_nega_ctx]
+        text_features: [nclass * 1+n_nega_ctx, 512]
+        image: [batch_size, 3, 224, 224]
+        '''
         print("Reached forward_negative in NegPromptCustomCLIP")
         image_features = self.image_encoder(image.to(device).type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
@@ -354,6 +364,7 @@ class NegPrompt(TrainerX):
         # Re-implemented NegPromt's CustomClip()
         print("Building NegPrompt's custom CLIP")
         self.model = NegPromptCustomCLIP(cfg, classnames, clip_model).to(device)
+        self.n_cls = len(classnames)    # just to debug
         print(f"Successfully building NegPrompt's custom CLIP")
         print('-' * 80)
 
@@ -388,6 +399,11 @@ class NegPrompt(TrainerX):
 
     # Qi: choose to load positive prompts here 
     def before_train(self):
+        '''
+        Load positive prompts from a pretrained model
+        self.positive_text_features is updated
+        self.ctx_positive is updated
+        self.ctx_negative is updated'''
         # still need to call before_train in Dassl
         super().before_train()
         
@@ -404,35 +420,260 @@ class NegPrompt(TrainerX):
 
     # dummy method 
     def load_model(self, directory, epoch=None): 
+        '''This is used if we want to load a model from a checkpoint and continue to train it'''
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
+        raise NotImplementedError
 
     # dummy method 
     def test(self): 
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.test")
 
+    def get_NND_loss(self, negative_text_features):
+        '''Calculate the loss for negative-negative distance'''
+        loss_nega_to_nega = 0
+        for i in range(negative_text_features.shape[0]):    # for each class
+            negative_features = negative_text_features[i,:,:].float()   # (n_nega_ctx , 512)
+            negative_features_mean = torch.mean(negative_features, dim=0, keepdim=True)
+            negative_features_mean_norm = negative_features_mean.norm(dim=-1, keepdim=True)  # (1, 1)
+
+            # Euclidean distance
+            # loss_nega_to_nega += -sum(torch.pdist(negative_features, p=2))
+
+            # Cosine distance
+            negative_features_norm = negative_features.norm(dim=-1, keepdim=True)   # (n_nega_ctx, 1)
+            # nega_nega
+            # dot_product = negative_features_norm @ negative_features_norm.t()
+            # nega_mean
+            dot_product = negative_features_norm @ negative_features_mean_norm.t()
+            loss_nega_to_nega += -torch.mean(1-dot_product)
+        loss_nega_to_nega /= negative_text_features.shape[0]
+        return loss_nega_to_nega
+    
+    def get_NIS_loss(self, output, n_nega_ctx, labels):
+        ''' Calculate the loss for negative image similarity
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
+        loss_nega_to_other = 0
+        out_nega_forCE = output # [batch_size, nclass * 1+n_nega_ctx]
+        # create soft_target(1-hot) for negative samples and positive samples
+        soft_target = torch.zeros(out_nega_forCE.shape).long().cuda()
+        idx = torch.arange(out_nega_forCE.shape[0]).cuda()
+        # This means all classes are assigned an 1.
+        soft_target.view(soft_target.shape[0], int(output.shape[1]/(1+n_nega_ctx)), -1)[idx, labels, :] = 1 # TODO: check what is this line doing
+        # labels_nega = labels.reshape(1, -1).repeat(n_nega_ctx, 1).t().reshape(-1)
+        # if options['open_set_method'] == 'MSP': # default
+        loss_fun = nn.MultiLabelSoftMarginLoss(reduction='mean')
+        loss_nega_to_other = loss_fun(out_nega_forCE, soft_target)
+            # loss_nega_to_other = F.cross_entropy(out_nega_forCE, labels_nega)
+        # elif options['open_set_method'] == 'Fence':
+        #     loss_nega_to_other = custom_alpha_cross_entropy(out_nega_forCE, soft_target, alpha=options['fence_alpha'])
+        # elif options['open_set_method'] == 'OE':    # may be reference
+        #     loss_nega_to_other = -(out_nega_forCE.mean(1) - torch.logsumexp(out_nega_forCE, dim=1)).mean() #OE
+        return loss_nega_to_other
+    
+    def get_NPD_loss(self, positive_text_features, negative_text_features):
+        ''' Calculate the loss for negative-positive distance
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
+        loss_nega_to_posi = 0
+        all_class_dis = 0
+        for i in range(negative_text_features.shape[0]):    # for each class
+            positive_feature = positive_text_features[i:i+1,:].float()  # (1, 512)
+            negative_feature = negative_text_features[i,:,:].float()    # (n_nega_ctx, 512)
+            positive_feature_norm = positive_feature/positive_feature.norm(dim=-1, keepdim=True)
+            negative_feature_norm = negative_feature/negative_feature.norm(dim=-1, keepdim=True)
+            dot_product = positive_feature_norm @ negative_feature_norm.t()
+            mean_cosine_dis = (1-dot_product).mean()
+            all_class_dis += mean_cosine_dis
+            
+        # if options['open_set_method'] == 'MSP':
+        loss_nega_to_posi -= all_class_dis/negative_text_features.shape[0]
+        # elif options['open_set_method'] == 'Fence':
+        #     loss_nega_to_posi = 0
+        # else:
+        #     loss_nega_to_posi += all_class_dis/negative_text_features.shape[0]
+        return loss_nega_to_posi
+
+
     # 之后train应该会用到
     def forward_backward(self, batch):
-        raise NotImplementedError
+        '''Run a batch, calculate loss (NND, NIS, NPD), update model and return loss
+        Called in run_epoch
+        ---
+        batch: from iterating self.train_loader_x'''
+        n_nega_ctx = self.cfg.TRAINER.NEGPROMPT.NEGA_CTX    # TODO: to add to cfg
+        # get data and labels from batch (to device)
+        image, labels = self.parse_batch_train(batch)   # TODO: make sure the data loader is correct   
+
+        # NOTE: POMP is not used by default. Not move to here (so that not need to add config)
+        with torch.set_grad_enabled(True):  # TODO: check here
+            output, text_features = self.model(image)
+            # output.shape = [batch_size, nclass * 1+n_nega_ctx]
+            # text_features.shape = [nclass * (1+n_nega_ctx), 512]
+            output_posi = output.view(-1, int(output.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx)[:, :, 0]   # the first column is the logits for positive prompts for each class
+            ensemble_text_features = text_features.view(int(text_features.shape[0]/(1+n_nega_ctx)), 1+n_nega_ctx, -1)   # shape = [n_class, 1+n_nega_ctx, 512]
+            positive_text_features = ensemble_text_features[:, 0, :]    # shape = [n_class, 512]
+            negative_text_features = ensemble_text_features[:, 1:, :]   # shape = [n_class, n_nega_ctx, 512]
+            if DEBUG:
+                print(f"Output shape is {output.shape}, should be [batch_size, {self.n_cls*(1+n_nega_ctx)}]")
+                print(f"Text features shape is {text_features.shape}, should be [{self.n_cls*(1+n_nega_ctx)}, 512]")
+                print(f"Output positive shape is {output_posi.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE}, {self.n_cls}]")
+                print(f"Positive text features shape is {positive_text_features.shape}, should be [{self.n_cls}, 512]")
+                print(f"Negative text features shape is {negative_text_features.shape}, should be [{self.n_cls}, {n_nega_ctx}, 512]")
+
+
+            # calculate loss
+            # 0. CE loss for pos prompt (actually no used here, just to keep original code)
+            loss_positive = F.cross_entropy(output_posi, labels)
+            loss_positive *= 1e-8   # not important
+            # NOTE: prototype loss is not used by default. Not move to here.
+
+            # 1. NND loss: negative-negative distance
+            loss_nega_to_nega = self.get_NND_loss(negative_text_features)
+            if DEBUG: print(f"Loss NND done")
+
+            # 2. NIS loss: Negative image similarity
+            # NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+            loss_nega_to_other = self.get_NIS_loss(output, n_nega_ctx, labels)
+            if DEBUG: print(f"Loss NIS done")
+
+            # 3. NPD loss: Negative-Positive Distance
+            # NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+            loss_nega_to_posi = self.get_NPD_loss(positive_text_features, negative_text_features)
+            if DEBUG: print(f"Loss NPD done")
+
+            # aggregate loss: weighted by cfg. prototype loss not used here
+            loss = loss_positive \
+                + loss_nega_to_other*self.cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT \
+                + loss_nega_to_nega*self.cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT \
+                + loss_nega_to_posi*self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT 
+
+            # backward and update
+            self.model_backward_and_update(loss)
+
+        loss_summary = {
+            "loss": loss.item(),
+            "loss_positive": loss_positive.item(),
+            "NIS Loss": loss_nega_to_other.item(),
+            "NND Loss": loss_nega_to_nega.item(),
+            "NPD Loss": loss_nega_to_posi.item(),
+            # "acc": compute_accuracy(output, labels)[0].item(),    # no acc here
+        }
+        if DEBUG: print(f"Loss summary: {loss_summary}")
+
+        if (self.batch_idx + 1) == self.num_batches:
+            self.update_lr()
+
+        return loss_summary
     
     # 之后train应该会用到
+    # TODO: modify coop's function for negprompt
     def parse_batch_train(self, batch):
-        raise NotImplementedError
+        '''Parse batch for training, also move to device
+        Called in forward_backward
+        '''
+        ''' A typical data loader in NegPrompt: 
+        single item: (sample, target) where target is class_index of the target class.
+        batch input:
+        data shape = [batch_size, 3, 224, 224]
+        labels shape = [batch_size,]
+        '''
+        input = batch["img"]
+        if DEBUG: print(f"input shape is {input.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE}, 3, 224, 224]")
+        label = batch["label"]
+        if DEBUG: print(f"labels shape is {label.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE},]")
+        input = input.to(self.device)
+        label = label.to(self.device)
+        # breakpoint()
+        return input, label
     
     # Qi: 
     # TODO: need to check if we really need to override this method
-    def run_epoch(self):
-        pass
+    # NOTE: this is from trainerX template
+
+    # def run_epoch(self):
+    #     self.set_model_mode("train")
+    #     losses = MetricMeter()
+    #     batch_time = AverageMeter()
+    #     data_time = AverageMeter()
+    #     self.num_batches = len(self.train_loader_x)
+
+    #     end = time.time()
+        
+    #     for self.batch_idx, batch in enumerate(self.train_loader_x):
+    #         data_time.update(time.time() - end)
+    #         # forward, update, and get loss
+    #         loss_summary = self.forward_backward(batch)
+    #         batch_time.update(time.time() - end)
+    #         losses.update(loss_summary)
+
+    #         meet_freq = (self.batch_idx + 1) % self.cfg.TRAIN.PRINT_FREQ == 0
+    #         only_few_batches = self.num_batches < self.cfg.TRAIN.PRINT_FREQ
+    #         if meet_freq or only_few_batches:
+    #             nb_remain = 0
+    #             nb_remain += self.num_batches - self.batch_idx - 1
+    #             nb_remain += (
+    #                 self.max_epoch - self.epoch - 1
+    #             ) * self.num_batches
+    #             eta_seconds = batch_time.avg * nb_remain
+    #             eta = str(datetime.timedelta(seconds=int(eta_seconds)))
+
+    #             info = []
+    #             info += [f"epoch [{self.epoch + 1}/{self.max_epoch}]"]
+    #             info += [f"batch [{self.batch_idx + 1}/{self.num_batches}]"]
+    #             info += [f"time {batch_time.val:.3f} ({batch_time.avg:.3f})"]
+    #             info += [f"data {data_time.val:.3f} ({data_time.avg:.3f})"]
+    #             info += [f"{losses}"]
+    #             info += [f"lr {self.get_current_lr():.4e}"]
+    #             info += [f"eta {eta}"]
+    #             print(" ".join(info))
+
+    #         n_iter = self.epoch * self.num_batches + self.batch_idx
+    #         for name, meter in losses.meters.items():
+    #             self.write_scalar("train/" + name, meter.avg, n_iter)
+    #         self.write_scalar("train/lr", self.get_current_lr(), n_iter)
+
+    #         end = time.time()
     
-    # TODO
+    # TODO: template from Dassl, need to modify for negprompt
     def after_epoch(self):
+        pass
+    #     last_epoch = (self.epoch + 1) == self.max_epoch
+    #     do_test = not self.cfg.TEST.NO_TEST
+    #     meet_checkpoint_freq = (
+    #         (self.epoch + 1) % self.cfg.TRAIN.CHECKPOINT_FREQ == 0
+    #         if self.cfg.TRAIN.CHECKPOINT_FREQ > 0 else False
+    #     )
+
+    #     if do_test and self.cfg.TEST.FINAL_MODEL == "best_val":
+    #         curr_result = self.test(split="val")
+    #         is_best = curr_result > self.best_result
+    #         if is_best:
+    #             self.best_result = curr_result
+    #             self.save_model(
+    #                 self.epoch,
+    #                 self.output_dir,
+    #                 val_result=curr_result,
+    #                 model_name="model-best.pth.tar"
+    #             )
+
+    #     if meet_checkpoint_freq or last_epoch:
+    #         self.save_model(self.epoch, self.output_dir)
+
+    def after_train(self):
         pass
 
     # Qi: dummy train for debugging (我不觉得需要override这个)
-    def train(self): 
+    # Yilan: example train from dassl's training base class
+    # Yilan: don't need to override this method!
+    def train(self):
+        """dummy train for debugging, don't need to override this method!"""
         print("Calling train")
         self.before_train()
         print("Before train done")
-        # self.before_epoch()
-        # self.run_epoch()
-        # self.after_epoch()
-        # self.after_train()
+        for self.epoch in range(2):
+            self.before_epoch()
+            print("Before epoch done")
+            self.run_epoch()
+            print("Run epoch done")
+            self.after_epoch()
+        self.after_train()
+        print("Train done")

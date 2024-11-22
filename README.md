@@ -89,6 +89,18 @@ powershell -File scripts/coop/main.ps1 imagenet rn50_ep50 end 16 1 False
 conda deactivate
 ```
 
+To run in one line:
+
+```powershell
+conda activate dassl && cd CoOp_works/CoOp && powershell Remove-Item -Path "output/imagenet/CoOp" -Recurse -Force && powershell -File scripts/coop/main.ps1 imagenet rn50_ep50 end 16 1 False && conda deactivate
+```
+
+or to rerun in one line:
+
+```powershell
+powershell Remove-Item -Path "output/imagenet/CoOp" -Recurse -Force && powershell -File scripts/coop/main.ps1 imagenet rn50_ep50 end 16 1 False
+```
+
 For NegPrompt:
 
 ```powershell
@@ -97,4 +109,16 @@ cd CoOp_works/CoOp
 powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force
 powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
 conda deactivate
+```
+
+To run in one line:
+
+```powershell
+conda activate dassl && cd CoOp_works/CoOp && powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False && conda deactivate
+```
+
+or to rerun in one line:
+
+```powershell
+powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
 ```
