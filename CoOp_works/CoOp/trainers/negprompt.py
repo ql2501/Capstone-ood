@@ -723,7 +723,7 @@ class NegPrompt(TrainerX):
         Called in run_epoch
         ---
         batch: from iterating self.train_loader_x'''
-        n_nega_ctx = self.cfg.TRAINER.NEGPROMPT.NEGA_CTX    # TODO: to add to cfg
+        n_nega_ctx = self.cfg.TRAINER.NEGPROMPT.NEGA_CTX
         # get data and labels from batch (to device)
         image, labels = self.parse_batch_train(batch)   # TODO: make sure the data loader is correct   
 
@@ -747,7 +747,7 @@ class NegPrompt(TrainerX):
             # calculate loss
             # 0. CE loss for pos prompt (actually no used here, just to keep original code)
             loss_positive = F.cross_entropy(output_posi, labels)
-            loss_positive *= 1e-8   # not important
+            # loss_positive *= 1e-8   # not important
             # NOTE: prototype loss is not used by default. Not move to here.
 
             # 1. NND loss: negative-negative distance
@@ -765,8 +765,7 @@ class NegPrompt(TrainerX):
             if DEBUG: print(f"Loss NPD done")
 
             # aggregate loss: weighted by cfg. prototype loss not used here
-            loss = loss_positive \
-                + loss_nega_to_other*self.cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT \
+            loss = loss_nega_to_other*self.cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT \
                 + loss_nega_to_nega*self.cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT \
                 + loss_nega_to_posi*self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT 
 
@@ -789,7 +788,7 @@ class NegPrompt(TrainerX):
         return loss_summary
     
     # 之后train应该会用到
-    # TODO: modify coop's function for negprompt
+    # modify coop's function for negprompt
     def parse_batch_train(self, batch):
         '''Parse batch for training, also move to device
         Called in forward_backward
@@ -908,17 +907,17 @@ class NegPrompt(TrainerX):
     # Qi: dummy train for debugging (我不觉得需要override这个)
     # Yilan: example train from dassl's training base class
     # Yilan: don't need to override this method!
-    def train(self):
-        """dummy train for debugging, don't need to override this method!"""
-        print("Calling train")
-        self.before_train()
-        print("Before train done")
-        for self.epoch in range(2):
-            self.before_epoch()
-            print("Before epoch done")
-            self.run_epoch()
-            print("Run epoch done")
-            self.after_epoch()
-            print("After epoch done")
-        self.after_train()
-        print("Train done")
+    # def train(self):
+    #     """dummy train for debugging, don't need to override this method!"""
+    #     print("Calling train")
+    #     self.before_train()
+    #     print("Before train done")
+    #     for self.epoch in range(2):
+    #         self.before_epoch()
+    #         print("Before epoch done")
+    #         self.run_epoch()
+    #         print("Run epoch done")
+    #         self.after_epoch()
+    #         print("After epoch done")
+    #     self.after_train()
+    #     print("Train done")
