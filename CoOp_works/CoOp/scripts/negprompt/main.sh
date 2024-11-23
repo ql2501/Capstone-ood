@@ -27,12 +27,12 @@ do
         --dataset-config-file configs/datasets/${DATASET}.yaml \
         --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
         --output-dir ${DIR} \
+        DATASET.NUM_SHOTS ${SHOTS}
 
         # qi_liu: don't think this extra opts is necessary
 
         # TRAINER.COOP.N_CTX ${NCTX} \
         # TRAINER.COOP.CSC ${CSC} \
         # TRAINER.COOP.CLASS_TOKEN_POSITION ${CTP} \
-        # DATASET.NUM_SHOTS ${SHOTS}
-    fi
+    
 done
