@@ -38,7 +38,9 @@ Then, choose one of the following:
 If training on CoOp, remove previous results for the new training on imagenet
 
 ```bash
-rm -rf output/imagenet/CoOp  
+rm -rf output/imagenet/CoOp 
+rm -rf ../../DATA/imagenet/split_fewshot
+rm ../../DATA/imagenet/preprocessed.pkl 
 ```
 
 If training on NegPrompt, remove previous results for the new training on imagenet
@@ -52,13 +54,13 @@ Then, choose one of the following:
 If training on CoOp, call bash scripts to train CoOp on ImagetNet
 
 ```bash
-bash scripts/coop/main.sh imagenet rn50_ep50 end 16 1 False
+bash scripts/coop/main.sh imagenet rn50_ep50 end 16 16 False
 ```
 
 If training on NegPrompt, call bash scripts to train NegPrompt on ImagetNet
 
 ```bash
-bash scripts/negprompt/main.sh imagenet vit_b16_ep50 end 16 1 False
+bash scripts/negprompt/main.sh imagenet vit_b16_ep50 end 16 16 False
 ```
   
 If run successfully, the output models and logs should be in the path above.  
