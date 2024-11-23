@@ -440,7 +440,7 @@ class NegPrompt(TrainerX):
         # Only give prompt_learner to the optimizer
         self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
         self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
-        self.register_model("prompt_learner", self.model.prompt_learner, self.optim, self.sched)
+        self.register_model("prompt_learner", self.model.prompt_learner, self.optim, self.sched) 
 
         self.scaler = GradScaler() if cfg.TRAINER.COOP.PREC == "amp" else None
 
