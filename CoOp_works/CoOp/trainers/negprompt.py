@@ -782,6 +782,13 @@ class NegPrompt(TrainerX):
         }
         if DEBUG: print(f"Loss summary: {loss_summary}")
 
+        loss_summary_after_update = {
+            "NIS Loss": self.get_NIS_loss(output, n_nega_ctx, labels),
+            "NND Loss": self.get_NND_loss(negative_text_features),
+            "NPD Loss": self.get_NPD_loss(positive_text_features, negative_text_features),
+        }
+        if DEBUG: print(f"Loss summary for current batch: {loss_summary_after_update}")
+
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
 
