@@ -25,7 +25,7 @@ foreach ($SEED in $SEEDS) {
         --dataset-config-file "configs/datasets/$DATASET.yaml" `
         --config-file "configs/trainers/$TRAINER/$CFG.yaml" `
         --output-dir $DIR
-        DATASET.NUM_SHOTS $SHOTS
+        # DATASET.NUM_SHOTS $SHOTS
 
         # qi_liu: don't think this extra opts is necessary
 
@@ -37,7 +37,7 @@ foreach ($SEED in $SEEDS) {
 # conda activate dassl
 # cd CoOp_works/CoOp
 # powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force
-# powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
+# powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 16 False
 
-# conda activate dassl && cd CoOp_works/CoOp && powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
-# powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 1 False
+# conda activate dassl && cd CoOp_works/CoOp && powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 16 False
+# powershell Remove-Item -Path "output/imagenet/NegPrompt" -Recurse -Force && powershell -File scripts/negprompt/main.ps1 imagenet vit_b16_ep50 end 16 16 False

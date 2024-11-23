@@ -27,6 +27,7 @@ from trainers.negprompt_utils import compute_oscr, compute_fpr, metric_ood
 
 from tqdm import tqdm
 import numpy as np
+from copy import deepcopy
 
 _tokenizer = _Tokenizer()
 # Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
@@ -276,7 +277,7 @@ class NegaPromptLearner(nn.Module):
         return prompts
     # Returns the prompt vectors for the negative class names only.
     def forward_negative(self):
-        print("Reached forward_negative in NegaPromptLearner")
+        if DEBUG: print("Reached forward_negative in NegaPromptLearner")
         ctx_negative = self.ctx_negative.to(device)
         if ctx_negative.dim() == 3:
             ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
@@ -359,7 +360,7 @@ class NegPromptCustomCLIP(nn.Module):
         text_features: [nclass * 1+n_nega_ctx, 512]
         image: [batch_size, 3, 224, 224]
         '''
-        print("Reached forward_negative in NegPromptCustomCLIP")
+        if DEBUG: print("Reached forward_negative in NegPromptCustomCLIP")
         image_features = self.image_encoder(image.to(device).type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         negative_prompts = self.prompt_learner.forward_negative()    # use negative prompts only
@@ -654,67 +655,71 @@ class NegPrompt(TrainerX):
 
     def get_NND_loss(self, negative_text_features):
         '''Calculate the loss for negative-negative distance'''
-        loss_nega_to_nega = 0
-        for i in range(negative_text_features.shape[0]):    # for each class
-            negative_features = negative_text_features[i,:,:].float()   # (n_nega_ctx , 512)
-            negative_features_mean = torch.mean(negative_features, dim=0, keepdim=True)
-            negative_features_mean_norm = negative_features_mean.norm(dim=-1, keepdim=True)  # (1, 1)
+        with torch.set_grad_enabled(True):
+            loss_nega_to_nega = 0
+            for i in range(negative_text_features.shape[0]):    # for each class
+                negative_features = negative_text_features[i,:,:].float()   # (n_nega_ctx , 512)
+                negative_features_mean = torch.mean(negative_features, dim=0, keepdim=True)
+                negative_features_mean_norm = negative_features_mean.norm(dim=-1, keepdim=True)  # (1, 1)
 
-            # Euclidean distance
-            # loss_nega_to_nega += -sum(torch.pdist(negative_features, p=2))
+                # Euclidean distance
+                # loss_nega_to_nega += -sum(torch.pdist(negative_features, p=2))
 
-            # Cosine distance
-            negative_features_norm = negative_features.norm(dim=-1, keepdim=True)   # (n_nega_ctx, 1)
-            # nega_nega
-            # dot_product = negative_features_norm @ negative_features_norm.t()
-            # nega_mean
-            dot_product = negative_features_norm @ negative_features_mean_norm.t()
-            loss_nega_to_nega += -torch.mean(1-dot_product)
-        loss_nega_to_nega /= negative_text_features.shape[0]
-        return loss_nega_to_nega
+                # Cosine distance
+                negative_features_norm = negative_features.norm(dim=-1, keepdim=True)   # (n_nega_ctx, 1)
+                # nega_nega
+                # dot_product = negative_features_norm @ negative_features_norm.t()
+                # nega_mean
+                dot_product = negative_features_norm @ negative_features_mean_norm.t()
+                loss_nega_to_nega += -torch.mean(1-dot_product)
+            loss_nega_to_nega /= negative_text_features.shape[0]
+            return loss_nega_to_nega
     
     def get_NIS_loss(self, output, n_nega_ctx, labels):
         ''' Calculate the loss for negative image similarity
         NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
-        loss_nega_to_other = 0
-        out_nega_forCE = output # [batch_size, nclass * 1+n_nega_ctx]
-        # create soft_target(1-hot) for negative samples and positive samples
-        soft_target = torch.zeros(out_nega_forCE.shape).long().cuda()
-        idx = torch.arange(out_nega_forCE.shape[0]).cuda()
-        # This means all classes are assigned an 1.
-        soft_target.view(soft_target.shape[0], int(output.shape[1]/(1+n_nega_ctx)), -1)[idx, labels, :] = 1 # TODO: check what is this line doing
-        # labels_nega = labels.reshape(1, -1).repeat(n_nega_ctx, 1).t().reshape(-1)
-        # if options['open_set_method'] == 'MSP': # default
-        loss_fun = nn.MultiLabelSoftMarginLoss(reduction='mean')
-        loss_nega_to_other = loss_fun(out_nega_forCE, soft_target)
-            # loss_nega_to_other = F.cross_entropy(out_nega_forCE, labels_nega)
-        # elif options['open_set_method'] == 'Fence':
-        #     loss_nega_to_other = custom_alpha_cross_entropy(out_nega_forCE, soft_target, alpha=options['fence_alpha'])
-        # elif options['open_set_method'] == 'OE':    # may be reference
-        #     loss_nega_to_other = -(out_nega_forCE.mean(1) - torch.logsumexp(out_nega_forCE, dim=1)).mean() #OE
-        return loss_nega_to_other
+        with torch.set_grad_enabled(True):
+            loss_nega_to_other = 0
+            out_nega_forCE = output # [batch_size, nclass * 1+n_nega_ctx]
+            # create soft_target(1-hot) for negative samples and positive samples
+            soft_target = torch.zeros(out_nega_forCE.shape).long().cuda()
+            idx = torch.arange(out_nega_forCE.shape[0]).cuda()
+            # This means all classes are assigned an 1.
+            soft_target.view(soft_target.shape[0], int(output.shape[1]/(1+n_nega_ctx)), -1)[idx, labels, :] = 1 # TODO: check what is this line doing
+            # labels_nega = labels.reshape(1, -1).repeat(n_nega_ctx, 1).t().reshape(-1)
+            # if options['open_set_method'] == 'MSP': # default
+            loss_fun = nn.MultiLabelSoftMarginLoss(reduction='mean')
+            loss_nega_to_other = loss_fun(out_nega_forCE, soft_target)
+                # loss_nega_to_other = F.cross_entropy(out_nega_forCE, labels_nega)
+            # elif options['open_set_method'] == 'Fence':
+            #     loss_nega_to_other = custom_alpha_cross_entropy(out_nega_forCE, soft_target, alpha=options['fence_alpha'])
+            # elif options['open_set_method'] == 'OE':    # may be reference
+            #     loss_nega_to_other = -(out_nega_forCE.mean(1) - torch.logsumexp(out_nega_forCE, dim=1)).mean() #OE
+            return loss_nega_to_other
     
     def get_NPD_loss(self, positive_text_features, negative_text_features):
         ''' Calculate the loss for negative-positive distance
-        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
-        loss_nega_to_posi = 0
-        all_class_dis = 0
-        for i in range(negative_text_features.shape[0]):    # for each class
-            positive_feature = positive_text_features[i:i+1,:].float()  # (1, 512)
-            negative_feature = negative_text_features[i,:,:].float()    # (n_nega_ctx, 512)
-            positive_feature_norm = positive_feature/positive_feature.norm(dim=-1, keepdim=True)
-            negative_feature_norm = negative_feature/negative_feature.norm(dim=-1, keepdim=True)
-            dot_product = positive_feature_norm @ negative_feature_norm.t()
-            mean_cosine_dis = (1-dot_product).mean()
-            all_class_dis += mean_cosine_dis
-            
-        # if options['open_set_method'] == 'MSP':
-        loss_nega_to_posi -= all_class_dis/negative_text_features.shape[0]
-        # elif options['open_set_method'] == 'Fence':
-        #     loss_nega_to_posi = 0
-        # else:
-        #     loss_nega_to_posi += all_class_dis/negative_text_features.shape[0]
-        return loss_nega_to_posi
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+        NPD is more negative the better'''
+        with torch.set_grad_enabled(True):
+            loss_nega_to_posi = 0
+            all_class_dis = 0
+            for i in range(negative_text_features.shape[0]):    # for each class
+                positive_feature = positive_text_features[i:i+1,:].float()  # (1, 512)
+                negative_feature = negative_text_features[i,:,:].float()    # (n_nega_ctx, 512)
+                positive_feature_norm = positive_feature/positive_feature.norm(dim=-1, keepdim=True)
+                negative_feature_norm = negative_feature/negative_feature.norm(dim=-1, keepdim=True)
+                dot_product = positive_feature_norm @ negative_feature_norm.t()
+                mean_cosine_dis = (1-dot_product).mean()
+                all_class_dis += mean_cosine_dis
+                
+            # if options['open_set_method'] == 'MSP':
+            loss_nega_to_posi -= all_class_dis/negative_text_features.shape[0]
+            # elif options['open_set_method'] == 'Fence':
+            #     loss_nega_to_posi = 0
+            # else:
+            #     loss_nega_to_posi += all_class_dis/negative_text_features.shape[0]
+            return loss_nega_to_posi
 
 
     # 之后train应该会用到
@@ -751,27 +756,93 @@ class NegPrompt(TrainerX):
             # NOTE: prototype loss is not used by default. Not move to here.
 
             # 1. NND loss: negative-negative distance
-            loss_nega_to_nega = self.get_NND_loss(negative_text_features)
+            # loss_nega_to_nega = self.get_NND_loss(negative_text_features)
+            loss_nega_to_nega = torch.tensor(0.0).cuda()
+            for i in range(negative_text_features.shape[0]):    # for each class
+                negative_features = negative_text_features[i,:,:].float()   # (n_nega_ctx , 512)
+                negative_features_mean = torch.mean(negative_features, dim=0, keepdim=True)
+                negative_features_mean_norm = negative_features_mean.norm(dim=-1, keepdim=True)  # (1, 1)
+
+                # Euclidean distance
+                # loss_nega_to_nega += -sum(torch.pdist(negative_features, p=2))
+
+                # Cosine distance
+                negative_features_norm = negative_features.norm(dim=-1, keepdim=True)   # (n_nega_ctx, 1)
+                # nega_nega
+                # dot_product = negative_features_norm @ negative_features_norm.t()
+                # nega_mean
+                dot_product = negative_features_norm @ negative_features_mean_norm.t()
+                loss_nega_to_nega += -torch.mean(1-dot_product)
+            loss_nega_to_nega /= negative_text_features.shape[0]
+
             if DEBUG: print(f"Loss NND done")
 
             # 2. NIS loss: Negative image similarity
             # NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
-            loss_nega_to_other = self.get_NIS_loss(output, n_nega_ctx, labels)
+            # loss_nega_to_other = self.get_NIS_loss(output, n_nega_ctx, labels)
+            loss_nega_to_other = torch.tensor(0.0).cuda()
+            out_nega_forCE = output # [batch_size, nclass * 1+n_nega_ctx]
+            # create soft_target(1-hot) for negative samples and positive samples
+            soft_target = torch.zeros(out_nega_forCE.shape).long().cuda()
+            idx = torch.arange(out_nega_forCE.shape[0]).cuda()
+            # This means all classes are assigned an 1.
+            soft_target.view(soft_target.shape[0], int(output.shape[1]/(1+n_nega_ctx)), -1)[idx, labels, :] = 1 # TODO: check what is this line doing
+            # labels_nega = labels.reshape(1, -1).repeat(n_nega_ctx, 1).t().reshape(-1)
+            # if options['open_set_method'] == 'MSP': # default
+            loss_fun = nn.MultiLabelSoftMarginLoss(reduction='mean')
+            loss_nega_to_other = loss_fun(out_nega_forCE, soft_target)
             if DEBUG: print(f"Loss NIS done")
 
             # 3. NPD loss: Negative-Positive Distance
             # NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
-            loss_nega_to_posi = self.get_NPD_loss(positive_text_features, negative_text_features)
+            # loss_nega_to_posi = self.get_NPD_loss(positive_text_features, negative_text_features)
+            loss_nega_to_posi = torch.tensor(0.0).cuda()
+            all_class_dis = torch.tensor(0.0).cuda()
+            for i in range(negative_text_features.shape[0]):    # for each class
+                positive_feature = positive_text_features[i:i+1,:].float()  # (1, 512)
+                negative_feature = negative_text_features[i,:,:].float()    # (n_nega_ctx, 512)
+                positive_feature_norm = positive_feature/positive_feature.norm(dim=-1, keepdim=True)
+                negative_feature_norm = negative_feature/negative_feature.norm(dim=-1, keepdim=True)
+                dot_product = positive_feature_norm @ negative_feature_norm.t()
+                mean_cosine_dis = (1-dot_product).mean()
+                all_class_dis += mean_cosine_dis
+                
+            # if options['open_set_method'] == 'MSP':
+            loss_nega_to_posi -= all_class_dis/negative_text_features.shape[0]
+
             if DEBUG: print(f"Loss NPD done")
+            if DEBUG: print(f'loss weight: NIS {self.cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT}, NND {self.cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT}, NPD {self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT}')
 
             # aggregate loss: weighted by cfg. prototype loss not used here
             loss = loss_positive \
                 + loss_nega_to_other*self.cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT \
                 + loss_nega_to_nega*self.cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT \
                 + loss_nega_to_posi*self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT 
+            
+            # TODO: NOTE: temp: for debug purpose!!!
+            # output_nega = output.view(-1, int(output.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx)[:, :, 1]
+            # loss = F.cross_entropy(output_nega, labels)
+            # loss = text_features.mean()
+
+            # clone original prompt_learner.ctx_negative
+            neg_prompt_before_update = deepcopy(self.model.prompt_learner.ctx_negative).detach()
 
             # backward and update
             self.model_backward_and_update(loss)
+
+            for name, param in self.model.named_parameters():
+                if param.requires_grad:  # 仅检查 requires_grad=True 的参数
+                    if param.grad is None:
+                        print(f"{name} has no gradient!")
+                    else:
+                        print(f"{name} gradient mean: {param.grad.mean()}")
+
+
+            # Check if ctx_negative has changed
+            if torch.equal(self.model.prompt_learner.ctx_negative, neg_prompt_before_update):
+                print("neg prompt has not changed.")
+            else:
+                print("neg prompt has changed!!")
 
         loss_summary = {
             "loss": loss.item(),
@@ -785,7 +856,7 @@ class NegPrompt(TrainerX):
 
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
-
+        # breakpoint()
         return loss_summary
     
     # 之后train应该会用到
@@ -908,17 +979,17 @@ class NegPrompt(TrainerX):
     # Qi: dummy train for debugging (我不觉得需要override这个)
     # Yilan: example train from dassl's training base class
     # Yilan: don't need to override this method!
-    def train(self):
-        """dummy train for debugging, don't need to override this method!"""
-        print("Calling train")
-        self.before_train()
-        print("Before train done")
-        for self.epoch in range(2):
-            self.before_epoch()
-            print("Before epoch done")
-            self.run_epoch()
-            print("Run epoch done")
-            self.after_epoch()
-            print("After epoch done")
-        self.after_train()
-        print("Train done")
+    # def train(self):
+    #     """dummy train for debugging, don't need to override this method!"""
+    #     print("Calling train")
+    #     self.before_train()
+    #     print("Before train done")
+    #     for self.epoch in range(2):
+    #         self.before_epoch()
+    #         print("Before epoch done")
+    #         self.run_epoch()
+    #         print("Run epoch done")
+    #         self.after_epoch()
+    #         print("After epoch done")
+    #     self.after_train()
+    #     print("Train done")

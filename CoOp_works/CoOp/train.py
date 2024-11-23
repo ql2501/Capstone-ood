@@ -118,6 +118,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT = 1   # default
     cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT = 0.05   # default
     cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT = 0.1  # default
+    cfg.DATASET.NUM_SHOTS = 16 # NOTE: temporarily, I'm sorry I can't pass that in debug console
 
 def setup_cfg(args):
     cfg = get_cfg_default()
