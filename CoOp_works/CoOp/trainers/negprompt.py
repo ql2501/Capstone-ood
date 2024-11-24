@@ -1,10 +1,7 @@
-# main model code for negprompt
+'''
+    main model code for negprompt
+'''
 
-# Dongqi 的一些建议：
-    # 目前的目标是用CoOp的trainer框架复现NegPrompt的功能
-    # 我感觉最好的approach是把CoOp build_model中的每一步复现
-    # 然后遇到什么卡住就迁移什么，这样至少有一个着手点
-    # 我把目前每个类的迁移进展写在了定义前的literal string里，大家可以update
 import os.path as osp
 import re
 
@@ -29,14 +26,16 @@ from tqdm import tqdm
 import numpy as np
 
 _tokenizer = _Tokenizer()
-# Ensure the device is set globally, 解决CPU、CUDA使用问题 Yuhao add
+# ensure the device is set globally
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# for debugging purpose
+DEBUG = False    
 
-DEBUG = False    # Yilan: this is for debugging purpose
-
-# Migrating helper functions from CoOp/trainers/coop.py to here
-# Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
 def load_clip_to_cpu(cfg):
+    '''
+    Migrating helper functions from CoOp/trainers/coop.py to here
+    Try to keep NegaPrompt trainer structure consistant with CoOp trainer structure
+    '''
     backbone_name = cfg.MODEL.BACKBONE.NAME
     url = clip._MODELS[backbone_name]
     model_path = clip._download(url)
@@ -54,11 +53,8 @@ def load_clip_to_cpu(cfg):
     return model
 
 '''
-目前看来init这个类需要的参数都是backbone中定义的clip_model(由load_clip_to_cpu返回)中自带的参数
-暂时没有要对齐的东西
-someone check this please
+NegaTextEncoder migrated from NegaPrompt, this should be corresponding to the TextEncoder from CoOp
 '''
-# NegaTextEncoder migrated from NegaPrompt, this should be corresponding to the TextEncoder from CoOp
 class NegaTextEncoder(nn.Module):
     def __init__(self, clip_model):
         super().__init__()
@@ -72,7 +68,6 @@ class NegaTextEncoder(nn.Module):
             self.attn_mask = clip_model.attn_mask
         else:
             self.attn_mask = None
-        # print('attn_mask is ', self.attn_mask)
     
     def forward(self, prompts, tokenized_prompts):
         '''
@@ -80,7 +75,6 @@ class NegaTextEncoder(nn.Module):
         '''
         if len(prompts.shape) == 4:
             prompts = torch.flatten(prompts, start_dim=0, end_dim=1)
-        # print(prompts.shape)
         x = prompts + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND (n_class*(1+n_neg)) * n_ctx * dim 
         if self.attn_mask is not None:
@@ -95,9 +89,8 @@ class NegaTextEncoder(nn.Module):
         return x
 
 '''
-暂时只migrate过来了init function to unblock build_model
+This is corresponding to PromptLearner In Coop
 '''
-# This is corresponding to PromptLearner In Coop
 class NegaPromptLearner(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
@@ -169,15 +162,9 @@ class NegaPromptLearner(nn.Module):
         name_lens = [len(_tokenizer.encode(name)) for name in classnames]
         positive_prompts = [prompt_prefix + " " +  name   for name in classnames]
         negative_prompts = [prompt_prefix + " " + name  for name in classnames]     # same as positive prompts
-        # breakpoint()
+
         positive_tokenized_prompts = torch.cat([clip.tokenize(p) for p in positive_prompts]).to(device)
         negative_tokenized_prompts = torch.cat([clip.tokenize(p) for p in negative_prompts]).to(device)
-        # tokenized_prompts:
-        # tensor([ <start>    a     photo   of   a  positive [classname] . <end>
-                # [49406,   320,  1125,   539,   320,  4844,  1929,   269, 49407, 0 ...,0],
-                # [49406,   320,  1125,   539,   320,  4844,  2368,   269, 49407, 0 ...,0],
-                # [49406,   320,  1125,   539,   320,  4844,  4558,   269, 49407, 0 ...,0],
-                # [49406,   320,  1125,   539,   320,  4844,  6531,   269, 49407, 0 ...,0]])
         with torch.no_grad():
             positive_embedding = clip_model.token_embedding(positive_tokenized_prompts).type(dtype).to(device)
             negative_embedding = clip_model.token_embedding(negative_tokenized_prompts).type(dtype).to(device)
@@ -215,9 +202,7 @@ class NegaPromptLearner(nn.Module):
         '''
         # modify_to_ori is a dic that transform the modified labels to original ones. This maybe used when sample 10 classes from 1k classes.
         ctx_positive = self.ctx_positive
-        # print('ctx_positive', ctx_positive.shape)
         ctx_negative = self.ctx_negative
-        # ctx_negative = ctx_negative[0:1, 0:1, :].repeat(ctx_negative.shape[0], ctx_negative.shape[1], 1)
         # make ctx_negative[0,0,:] to ctx_negative
         if ctx_negative.shape[0] == 0:
             if ctx_positive.dim() == 3:
@@ -255,9 +240,10 @@ class NegaPromptLearner(nn.Module):
         
         return prompts
 
-    # Returns the prompt vectors for the positive class names.
     def forward_positive(self):
-        # print("Reached forward_positive in NegaPromptLearner")
+        '''
+        Returns the prompt vectors for the positive class names.
+        '''
         ctx_positive = self.ctx_positive
         if ctx_positive.dim() == 3:
             ctx = ctx_positive.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
@@ -274,9 +260,11 @@ class NegaPromptLearner(nn.Module):
             dim = 2,
         )
         return prompts
-    # Returns the prompt vectors for the negative class names only.
+    
     def forward_negative(self):
-        # print("Reached forward_negative in NegaPromptLearner")
+        '''
+        Returns the prompt vectors for the negative class names only.
+        '''
         ctx_negative = self.ctx_negative.to(device)
         if ctx_negative.dim() == 3:
             ctx = ctx_negative.unsqueeze(0).expand(self.n_cls, -1, -1, -1)
@@ -294,9 +282,11 @@ class NegaPromptLearner(nn.Module):
         )
         return prompts
 
-    # Update the positive context vectors by given ctx_posi, and generate negative context vectors.
-    # "ctx_posi" is a torch.Tensor
     def update_ctx_positive(self, ctx_posi):
+        '''
+        Update the positive context vectors by given ctx_posi, and generate negative context vectors.
+        NOTE: "ctx_posi" is a torch.Tensor
+        '''
         noise_range = 1e-5
         noise_dist = dist.Uniform(low=-noise_range, high=noise_range, )
         if ctx_posi.dim() == 2: 
@@ -312,23 +302,24 @@ class NegaPromptLearner(nn.Module):
         print(f"After update, the shape of ctx_positive is {self.ctx_positive.shape}")
     
     def update_ctx_negative(self, ctx_nega):
-        ''' Set the negative context vectors to ctx_nega.'''
+        '''
+        Set the negative context vectors to ctx_nega.
+        '''
         self.ctx_negative = nn.Parameter(ctx_nega, requires_grad=False)
 
     def freeze_ctx_positive(self):
-        '''Freeze the positive context vectors to self.ctx_positive.'''
+        '''
+        Freeze the positive context vectors to self.ctx_positive.
+        '''
         self.ctx_positive = nn.Parameter(self.ctx_positive, requires_grad=False)
 
     def get_ctx_positive(self):
         return self.ctx_positive
 
 '''
-Not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
+Intermediate layer: not exist in NegPrompt, but needed in order to implement a complete CoOp trainer
 '''
-# 中间层
-class NegPromptCustomCLIP(nn.Module):
-    # Qi's modification: 
-    # this __init__ should follow the one in NegPromptClip instead of the one in CoOp
+class NegPromptCustomCLIP(nn.Module): 
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
         self.prompt_learner = NegaPromptLearner(cfg, classnames, clip_model).to(device)
@@ -343,30 +334,27 @@ class NegPromptCustomCLIP(nn.Module):
         self.clip_model = clip_model
         self.cfg = cfg
 
-    # Qi: 
-    # In our case, we only train negative prompts, corresponding to stage 3 in NegPrompt
     def forward(self, image):
+        '''
+        In our case, we only train negative prompts, corresponding to stage 3 in NegPrompt
+        '''
         return self.forward_negative(image)
     
-    # Only learn the negative prompts
-    # return shape:
-    # logits: [batch_size, nclass * 1+n_nega_ctx]
-    # text_features: [nclass * 1+n_nega_ctx, 512]
     def forward_negative(self, image): 
-        '''Only learn the negative prompts
+        '''
+        Only learn the negative prompts
+        image: [batch_size, 3, 224, 224]
         return shape:
         logits: [batch_size, nclass * 1+n_nega_ctx]
         text_features: [nclass * 1+n_nega_ctx, 512]
-        image: [batch_size, 3, 224, 224]
         '''
-        # print("Reached forward_negative in NegPromptCustomCLIP")
         image_features = self.image_encoder(image.to(device).type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         negative_prompts = self.prompt_learner.forward_negative()    # use negative prompts only
         negative_tokenized_prompts = self.prompt_learner.negative_tokenized_prompts
         negative_text_features = self.text_encoder(negative_prompts, negative_tokenized_prompts) #(1000*n_nega_ctx) * 512)
         positive_text_features = self.positive_text_features # 1000*512, fixed
-        #fusion the text_features that positive, negative, positive, negative, ...
+        # fusion the text_features that positive, negative, positive, negative, ...
         positive_text_features = positive_text_features.view(positive_text_features.shape[0], 1, -1)
         negative_text_features = negative_text_features.view(positive_text_features.shape[0], self.n_nega_ctx, -1)  # 1000 * n_nega_ctx * 512
 
@@ -378,9 +366,11 @@ class NegPromptCustomCLIP(nn.Module):
         logits = (logit_scale * image_features @ text_features.t())
         return logits, text_features
 
-    # Use ctx_posi to update the positive context vectors, and generate negative context vectors.
-    # Then get the positive text features by CLIP text encoder into positive_text_features.
     def get_ctx_posi(self, ctx_posi):
+        '''
+        Use ctx_posi to update the positive context vectors, and generate negative context vectors.
+        Then get the positive text features by CLIP text encoder into positive_text_features.
+        '''
         self.prompt_learner.update_ctx_positive(ctx_posi)
         # get positive_text_features
         prompts = self.prompt_learner.forward_positive() # Returns the prompt vectors for the positive class names.
@@ -388,7 +378,9 @@ class NegPromptCustomCLIP(nn.Module):
         self.positive_text_features = self.text_encoder(prompts, tokenized_prompts) # get text embedding for positive prompts by CLIP transformer
 
     def forward_test(self, image, text_features=None):
-        '''The forward method for testing, need input trianed text_features'''
+        '''
+        The forward method for testing, need input trained text_features
+        '''
         image_features = self.image_encoder(image.type(self.dtype))
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         logit_scale = self.logit_scale.exp()
@@ -396,15 +388,16 @@ class NegPromptCustomCLIP(nn.Module):
         return logits, text_features
 
 '''
-    Migrate NegaPromptCLIP to the following NegPrompt class
-''' 
-# 这个是最上面的一层，通过中间层包在NegaPromptLearner和NegaTextEncoder上面. 
+Migrate NegaPromptCLIP to the following NegPrompt class
+This is the topmost layer, wrapping around the NegaPromptLearner and NegaTextEncoder through the intermediate layer.
+'''  
 @TRAINER_REGISTRY.register()
 class NegPrompt(TrainerX):
-    # Override build_model in line 324 from CoOp_works\Dassl.pytorch\dassl\engine\trainer.py
-    # called in SimpleTrainer init
     def build_model(self):
-        print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.build_model")
+        '''
+        Override build_model in line 324 from CoOp_works\Dassl.pytorch\dassl\engine\trainer.py
+        called in SimpleTrainer init
+        '''
         cfg = self.cfg
         classnames = self.dm.dataset.classnames
 
@@ -437,8 +430,29 @@ class NegPrompt(TrainerX):
             load_pretrained_weights(self.model.prompt_learner, cfg.MODEL.INIT_WEIGHTS)
 
         # self.model.to(self.device)
+        
+        # load positive prompts here: 
+        # self.positive_text_features is updated
+        # self.ctx_positive is updated
+        # self.ctx_negative is updated
+        # NOTE: This path is currently hardcoded. Consider whether to make it a parameter in the cfg later.
+        model_positive_path = "output/imagenet/CoOp/vit_b16_ep50_16shots/nctx16_cscFalse_ctpend/seed1/prompt_learner/model.pth.tar-50"
+        print(f"Start loading positive prompts from model path: {model_positive_path}")
+        saved_model = torch.load(model_positive_path, map_location=torch.device(device))
+        print("Loaded positive prompts: ")
+        print(saved_model['state_dict']['ctx'])
+        self.model.get_ctx_posi(saved_model['state_dict']['ctx'])
+        print('Positive prompt from Pretrained CoOp loaded')
+        del saved_model
+
         # Only give prompt_learner to the optimizer
-        self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM)
+        # add only active params in self.model to optimizer
+        params = []
+        for name, param in self.model.prompt_learner.named_parameters():
+            if param.requires_grad:
+                print(f"Adding {name} to optimizer")
+                params.append(param)
+        self.optim = build_optimizer(self.model.prompt_learner, cfg.OPTIM, param_groups = params)
         self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
         self.register_model("prompt_learner", self.model.prompt_learner, self.optim, self.sched) 
 
@@ -453,38 +467,18 @@ class NegPrompt(TrainerX):
 
         print("Finished building model NegPrompt")
 
-    # Qi: choose to load positive prompts here 
-    def before_train(self):
-        '''
-        Load positive prompts from a pretrained model
-        self.positive_text_features is updated
-        self.ctx_positive is updated
-        self.ctx_negative is updated'''
-        # still need to call before_train in Dassl
-        super().before_train()
-        
-        # load
-        # NOTE: this path目前是写死的，之后看看要不要变成一个参数存在cfg里
-        model_positive_path = "output/imagenet/CoOp/vit_b16_ep50_16shots/nctx16_cscFalse_ctpend/seed1/prompt_learner/model.pth.tar-50"
-        print(f"Start loading positive prompts from model path {model_positive_path}")
-        saved_model = torch.load(model_positive_path, map_location=torch.device(device))
-        print("Loaded positive prompts: ")
-        print(saved_model['state_dict']['ctx'])
-        self.model.get_ctx_posi(saved_model['state_dict']['ctx'])
-        print('Positive prompt from Pretrained CoOp loaded')
-        del saved_model
-
-    # dummy method 
     def load_model(self, directory, epoch=None): 
-        '''This is used if we want to load a model from a checkpoint and continue to train it'''
+        '''
+        This is used if we want to load a model from a checkpoint and continue to train it
+        '''
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
         raise NotImplementedError
 
     def get_ood_score(self, logits):
-        '''logits shape: (batch_size, n_classes * (1+n_nega_ctx))
-
-        Return: predictions, ood_score, logits_posi, logits_negas'''
-        # logits shape: (batch_size, n_classes * (1+n_nega_ctx))
+        '''
+        logits shape: (batch_size, n_classes * (1+n_nega_ctx))
+        Return: predictions, ood_score, logits_posi, logits_negas
+        '''
         n_nega_ctx = self.model.n_nega_ctx
         softmax_logits = F.softmax(logits, dim=1)
         softmax_logits = softmax_logits.view(-1, int(softmax_logits.shape[1]/(1+n_nega_ctx)), 1+n_nega_ctx) # (batch_size, n_classes, 1+n_nega_ctx)
@@ -532,7 +526,6 @@ class NegPrompt(TrainerX):
             raise ValueError('Unknown open score type: {}'.format(self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE))
         return predictions, ood_score, logits_posi, logits_negas
 
-    # dummy method 
     # TODO: test_clip.test_nega_clip(), modify input and output
     def test(self, split=None): 
         '''
@@ -653,7 +646,9 @@ class NegPrompt(TrainerX):
         return results['ACC']  # TODO: check what should be returned    
 
     def get_NND_loss(self, negative_text_features):
-        '''Calculate the loss for negative-negative distance'''
+        '''
+        Calculate the loss for negative-negative distance
+        '''
         loss_nega_to_nega = 0
         for i in range(negative_text_features.shape[0]):    # for each class
             negative_features = negative_text_features[i,:,:].float()   # (n_nega_ctx , 512)
@@ -674,8 +669,10 @@ class NegPrompt(TrainerX):
         return loss_nega_to_nega
     
     def get_NIS_loss(self, output, n_nega_ctx, labels):
-        ''' Calculate the loss for negative image similarity
-        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
+        '''
+        Calculate the loss for negative image similarity
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+        '''
         loss_nega_to_other = 0
         out_nega_forCE = output # [batch_size, nclass * 1+n_nega_ctx]
         # create soft_target(1-hot) for negative samples and positive samples
@@ -695,8 +692,10 @@ class NegPrompt(TrainerX):
         return loss_nega_to_other
     
     def get_NPD_loss(self, positive_text_features, negative_text_features):
-        ''' Calculate the loss for negative-positive distance
-        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg'''
+        '''
+        Calculate the loss for negative-positive distance
+        NOTE: by default use 'MSP' method, so comment out the 'Fence' and 'OE' method, so that no need to add cfg
+        '''
         loss_nega_to_posi = 0
         all_class_dis = 0
         for i in range(negative_text_features.shape[0]):    # for each class
@@ -716,13 +715,15 @@ class NegPrompt(TrainerX):
         #     loss_nega_to_posi += all_class_dis/negative_text_features.shape[0]
         return loss_nega_to_posi
 
-
-    # 之后train应该会用到
     def forward_backward(self, batch):
-        '''Run a batch, calculate loss (NND, NIS, NPD), update model and return loss
+        '''
+        Run a batch, calculate loss (NND, NIS, NPD), update model and return loss
         Called in run_epoch
         ---
-        batch: from iterating self.train_loader_x'''
+        batch: from iterating self.train_loader_x
+        '''
+        prev = self.model.prompt_learner.ctx_negative.data.clone()
+
         n_nega_ctx = self.cfg.TRAINER.NEGPROMPT.NEGA_CTX
         # get data and labels from batch (to device)
         image, labels = self.parse_batch_train(batch)   # TODO: make sure the data loader is correct   
@@ -742,7 +743,6 @@ class NegPrompt(TrainerX):
                 print(f"Output positive shape is {output_posi.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE}, {self.n_cls}]")
                 print(f"Positive text features shape is {positive_text_features.shape}, should be [{self.n_cls}, 512]")
                 print(f"Negative text features shape is {negative_text_features.shape}, should be [{self.n_cls}, {n_nega_ctx}, 512]")
-
 
             # calculate loss
             # 0. CE loss for pos prompt (actually no used here, just to keep original code)
@@ -770,19 +770,23 @@ class NegPrompt(TrainerX):
                 + loss_nega_to_posi*self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT 
 
             # backward and update
-            #self.model_backward_and_update(loss)
+            self.model_backward_and_update(loss)
+            
             # This method has dismatched optimizer and model_parameter(compute graph is broken)
             # We will implement a local optimizer
 
-            # add only active params in self.model to local optimizer
-            params = []
-            for name, param in self.model.prompt_learner.named_parameters():
-                if param.requires_grad:
-                    print(f"Adding {name} to optimizer")
-                    params.append(param)
+            # # COMMENT OUT FOR DEBUGGING DASSL 
+            # # add only active params in self.model to local optimizer   
+            # params = []
+            # for name, param in self.model.prompt_learner.named_parameters():
+            #     if param.requires_grad:
+            #         print(f"Adding {name} to optimizer")
+            #         params.append(param)
 
-            # TODO: initialize this optimizer with self.cfg.OPTIM rather than default values
-            optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9)
+            # # COMMENT OUT FOR DEBUGGING DASSL 
+            # # TODO: initialize this optimizer with self.cfg.OPTIM rather than default values
+            # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9)
+
             #recording original weights associated with optimizer
             if DEBUG:
                 original_weights = []
@@ -793,27 +797,29 @@ class NegPrompt(TrainerX):
                     for param in param_group['params']:
                         print(f"Originer Parameter Gradients: {param.grad}")
 
-
-            # zero grad
-            optimizer.zero_grad()
+            # # COMMENT OUT FOR DEBUGGING DASSL 
+            # # zero grad
+            # optimizer.zero_grad()
             # make sure grad is cleared
             if DEBUG:
                 for param_group in optimizer.param_groups:
                     for param in param_group['params']:
                         print(f"Parameter Gradients after zero_grad: {param.grad}")
 
+            # # COMMENT OUT FOR DEBUGGING DASSL 
+            # #compute grad
+            # loss.backward()
 
-            #compute grad
-            loss.backward()
+            # #update params
+            # optimizer.step()
 
-            #update params
-            optimizer.step()
             #Check if the weights are updated
             if DEBUG:
                 for i, param_group in enumerate(optimizer.param_groups):
                     for j, param in enumerate(param_group['params']):
                         print(f"Parameter {i}-{j} changed:", not torch.equal(param.data, original_weights.pop(0)))
                 print("weight comparison completed")
+            print(f"IF CTX_NEG CHANGED: {not torch.equal(prev, self.model.prompt_learner.ctx_negative.data)}")
 
             # after breaked here, press 'c' in pbd to see how loss drop from 14 to 7 gradually
             # breakpoint()
@@ -825,7 +831,9 @@ class NegPrompt(TrainerX):
             "NPD Loss": loss_nega_to_posi.item(),
             # "acc": compute_accuracy(output, labels)[0].item(),    # no acc here
         }
-        if DEBUG: print(f"Loss summary: {loss_summary}")
+        if DEBUG: 
+            print(f"Loss summary: {loss_summary}")
+            print("-"*80)
         # loss_summary_after_update = {
         #     "NIS Loss": self.get_NIS_loss(output, n_nega_ctx, labels),
         #     "NND Loss": self.get_NND_loss(negative_text_features),
@@ -833,12 +841,12 @@ class NegPrompt(TrainerX):
         # }
         # if DEBUG: print(f"Loss summary for current batch: {loss_summary_after_update}")
 
-        if (self.batch_idx + 1) == self.num_batches:
-            self.update_lr()
+        # # COMMENT OUT FOR DEBUGGING DASSL 
+        # if (self.batch_idx + 1) == self.num_batches:
+        #     self.update_lr()
 
         return loss_summary
     
-    # 之后train应该会用到
     # modify coop's function for negprompt
     def parse_batch_train(self, batch):
         '''Parse batch for training, also move to device
