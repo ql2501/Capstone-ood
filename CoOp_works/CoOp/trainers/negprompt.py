@@ -770,8 +770,53 @@ class NegPrompt(TrainerX):
                 + loss_nega_to_posi*self.cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT 
 
             # backward and update
-            self.model_backward_and_update(loss)
+            #self.model_backward_and_update(loss)
+            # This method has dismatched optimizer and model_parameter(compute graph is broken)
+            # We will implement a local optimizer
 
+            # add only active params in self.model to local optimizer
+            params = []
+            for name, param in self.model.prompt_learner.named_parameters():
+                if param.requires_grad:
+                    print(f"Adding {name} to optimizer")
+                    params.append(param)
+
+            # TODO: initialize this optimizer with self.cfg.OPTIM rather than default values
+            optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9)
+            #recording original weights associated with optimizer
+            if DEBUG:
+                original_weights = []
+                for param_group in optimizer.param_groups:
+                    for param in param_group['params']:
+                        original_weights.append(param.data.clone())  # Clone to avoid modification
+                for param_group in optimizer.param_groups:
+                    for param in param_group['params']:
+                        print(f"Originer Parameter Gradients: {param.grad}")
+
+
+            # zero grad
+            optimizer.zero_grad()
+            # make sure grad is cleared
+            if DEBUG:
+                for param_group in optimizer.param_groups:
+                    for param in param_group['params']:
+                        print(f"Parameter Gradients after zero_grad: {param.grad}")
+
+
+            #compute grad
+            loss.backward()
+
+            #update params
+            optimizer.step()
+            #Check if the weights are updated
+            if DEBUG:
+                for i, param_group in enumerate(optimizer.param_groups):
+                    for j, param in enumerate(param_group['params']):
+                        print(f"Parameter {i}-{j} changed:", not torch.equal(param.data, original_weights.pop(0)))
+                print("weight comparison completed")
+
+            # after breaked here, press 'c' in pbd to see how loss drop from 14 to 7 gradually
+            # breakpoint()
         loss_summary = {
             "loss": loss.item(),
             "loss_positive": loss_positive.item(),
@@ -781,13 +826,12 @@ class NegPrompt(TrainerX):
             # "acc": compute_accuracy(output, labels)[0].item(),    # no acc here
         }
         if DEBUG: print(f"Loss summary: {loss_summary}")
-
-        loss_summary_after_update = {
-            "NIS Loss": self.get_NIS_loss(output, n_nega_ctx, labels),
-            "NND Loss": self.get_NND_loss(negative_text_features),
-            "NPD Loss": self.get_NPD_loss(positive_text_features, negative_text_features),
-        }
-        if DEBUG: print(f"Loss summary for current batch: {loss_summary_after_update}")
+        # loss_summary_after_update = {
+        #     "NIS Loss": self.get_NIS_loss(output, n_nega_ctx, labels),
+        #     "NND Loss": self.get_NND_loss(negative_text_features),
+        #     "NPD Loss": self.get_NPD_loss(positive_text_features, negative_text_features),
+        # }
+        # if DEBUG: print(f"Loss summary for current batch: {loss_summary_after_update}")
 
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()

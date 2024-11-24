@@ -300,7 +300,45 @@ class TrainerBase:
     def model_backward_and_update(self, loss, names=None):
         self.model_zero_grad(names)
         self.model_backward(loss)
+        # original_weights = []
+        # # Get parameters managed by the optimizer
+        # optimizer_params = set(self._optims['prompt_learner'].param_groups[0]['params'])
+
+        # # Compare with named parameters in the model
+        # for name, param in self._models['prompt_learner'].named_parameters():
+        #     if param in optimizer_params:
+        #         print(f"Optimizer is managing: {name}")
+        #     else:
+        #         print(f"Optimizer is NOT managing: {name}")
+
+        # for name, param in self._models['prompt_learner'].named_parameters():
+        #     if param.grad is not None:
+        #         print(f"Param: {name}, Grad Norm: {param.grad.norm()}, Shape: {param.shape}")
+        #     else:
+        #         print(f"Param: {name} has no gradient")
+
+        # for param_group in self._optims['prompt_learner'].param_groups:
+        #     for param in param_group['params']:
+        #         original_weights.append(param.data.clone())  # Clone to avoid modification
         self.model_update(names)
+        # for i, param_group in enumerate(self._optims['prompt_learner'].param_groups):
+        #     for j, param in enumerate(param_group['params']):
+        #         print(f"Parameter {i}-{j} changed:", not torch.equal(param.data, original_weights.pop(0)))
+        # print("weight comparison completed")
+        # for param_group in self._optims['prompt_learner'].param_groups:
+        #     for param in param_group['params']:
+        #         print(f"Gradients: {param.grad}")
+        # print("Optimizer parameters:")
+        # # Create a mapping of parameter objects to their names
+        # param_to_name = {param: name for name, param in self._models['prompt_learner'].named_parameters()}
+        # for name, param in self._models['prompt_learner'].named_parameters():
+        #     print(f"{name} in neg_prompt_learner requires_grad: {param.requires_grad}")
+
+        # # Print optimizer parameters along with their names
+        # for param_group in self._optims['prompt_learner'].param_groups:
+        #     for param in param_group['params']:
+        #         name = param_to_name.get(param, "Unnamed")  # Use "Unnamed" if param is not in the model
+        #         print(f"Name: {name}, Shape: {param.shape}, Requires Grad: {param.requires_grad}")
 
 
 class SimpleTrainer(TrainerBase):
