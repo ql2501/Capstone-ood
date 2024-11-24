@@ -722,7 +722,8 @@ class NegPrompt(TrainerX):
         ---
         batch: from iterating self.train_loader_x
         '''
-        prev = self.model.prompt_learner.ctx_negative.data.clone()
+        if DEBUG: 
+            prev = self.model.prompt_learner.ctx_negative.data.clone()
 
         n_nega_ctx = self.cfg.TRAINER.NEGPROMPT.NEGA_CTX
         # get data and labels from batch (to device)
@@ -771,58 +772,10 @@ class NegPrompt(TrainerX):
 
             # backward and update
             self.model_backward_and_update(loss)
-            
-            # This method has dismatched optimizer and model_parameter(compute graph is broken)
-            # We will implement a local optimizer
+           
+            if DEBUG: 
+                print(f"IF CTX_NEG CHANGED: {not torch.equal(prev, self.model.prompt_learner.ctx_negative.data)}")
 
-            # # COMMENT OUT FOR DEBUGGING DASSL 
-            # # add only active params in self.model to local optimizer   
-            # params = []
-            # for name, param in self.model.prompt_learner.named_parameters():
-            #     if param.requires_grad:
-            #         print(f"Adding {name} to optimizer")
-            #         params.append(param)
-
-            # # COMMENT OUT FOR DEBUGGING DASSL 
-            # # TODO: initialize this optimizer with self.cfg.OPTIM rather than default values
-            # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9)
-
-            #recording original weights associated with optimizer
-            if DEBUG:
-                original_weights = []
-                for param_group in optimizer.param_groups:
-                    for param in param_group['params']:
-                        original_weights.append(param.data.clone())  # Clone to avoid modification
-                for param_group in optimizer.param_groups:
-                    for param in param_group['params']:
-                        print(f"Originer Parameter Gradients: {param.grad}")
-
-            # # COMMENT OUT FOR DEBUGGING DASSL 
-            # # zero grad
-            # optimizer.zero_grad()
-            # make sure grad is cleared
-            if DEBUG:
-                for param_group in optimizer.param_groups:
-                    for param in param_group['params']:
-                        print(f"Parameter Gradients after zero_grad: {param.grad}")
-
-            # # COMMENT OUT FOR DEBUGGING DASSL 
-            # #compute grad
-            # loss.backward()
-
-            # #update params
-            # optimizer.step()
-
-            #Check if the weights are updated
-            if DEBUG:
-                for i, param_group in enumerate(optimizer.param_groups):
-                    for j, param in enumerate(param_group['params']):
-                        print(f"Parameter {i}-{j} changed:", not torch.equal(param.data, original_weights.pop(0)))
-                print("weight comparison completed")
-            print(f"IF CTX_NEG CHANGED: {not torch.equal(prev, self.model.prompt_learner.ctx_negative.data)}")
-
-            # after breaked here, press 'c' in pbd to see how loss drop from 14 to 7 gradually
-            # breakpoint()
         loss_summary = {
             "loss": loss.item(),
             "loss_positive": loss_positive.item(),
@@ -831,20 +784,7 @@ class NegPrompt(TrainerX):
             "NPD Loss": loss_nega_to_posi.item(),
             # "acc": compute_accuracy(output, labels)[0].item(),    # no acc here
         }
-        if DEBUG: 
-            print(f"Loss summary: {loss_summary}")
-            print("-"*80)
-        # loss_summary_after_update = {
-        #     "NIS Loss": self.get_NIS_loss(output, n_nega_ctx, labels),
-        #     "NND Loss": self.get_NND_loss(negative_text_features),
-        #     "NPD Loss": self.get_NPD_loss(positive_text_features, negative_text_features),
-        # }
-        # if DEBUG: print(f"Loss summary for current batch: {loss_summary_after_update}")
-
-        # # COMMENT OUT FOR DEBUGGING DASSL 
-        # if (self.batch_idx + 1) == self.num_batches:
-        #     self.update_lr()
-
+        
         return loss_summary
     
     # modify coop's function for negprompt
@@ -864,119 +804,4 @@ class NegPrompt(TrainerX):
         if DEBUG: print(f"labels shape is {label.shape}, should be [{self.cfg.DATALOADER.TRAIN_X.BATCH_SIZE},]")
         input = input.to(self.device)
         label = label.to(self.device)
-        # breakpoint()
         return input, label
-    
-    # Qi: 
-    # TODO: need to check if we really need to override this method
-    # NOTE: this is from trainerX template
-
-    # def run_epoch(self):
-    #     self.set_model_mode("train")
-    #     losses = MetricMeter()
-    #     batch_time = AverageMeter()
-    #     data_time = AverageMeter()
-    #     self.num_batches = len(self.train_loader_x)
-
-    #     end = time.time()
-        
-    #     for self.batch_idx, batch in enumerate(self.train_loader_x):
-    #         data_time.update(time.time() - end)
-    #         # forward, update, and get loss
-    #         loss_summary = self.forward_backward(batch)
-    #         batch_time.update(time.time() - end)
-    #         losses.update(loss_summary)
-
-    #         meet_freq = (self.batch_idx + 1) % self.cfg.TRAIN.PRINT_FREQ == 0
-    #         only_few_batches = self.num_batches < self.cfg.TRAIN.PRINT_FREQ
-    #         if meet_freq or only_few_batches:
-    #             nb_remain = 0
-    #             nb_remain += self.num_batches - self.batch_idx - 1
-    #             nb_remain += (
-    #                 self.max_epoch - self.epoch - 1
-    #             ) * self.num_batches
-    #             eta_seconds = batch_time.avg * nb_remain
-    #             eta = str(datetime.timedelta(seconds=int(eta_seconds)))
-
-    #             info = []
-    #             info += [f"epoch [{self.epoch + 1}/{self.max_epoch}]"]
-    #             info += [f"batch [{self.batch_idx + 1}/{self.num_batches}]"]
-    #             info += [f"time {batch_time.val:.3f} ({batch_time.avg:.3f})"]
-    #             info += [f"data {data_time.val:.3f} ({data_time.avg:.3f})"]
-    #             info += [f"{losses}"]
-    #             info += [f"lr {self.get_current_lr():.4e}"]
-    #             info += [f"eta {eta}"]
-    #             print(" ".join(info))
-
-    #         n_iter = self.epoch * self.num_batches + self.batch_idx
-    #         for name, meter in losses.meters.items():
-    #             self.write_scalar("train/" + name, meter.avg, n_iter)
-    #         self.write_scalar("train/lr", self.get_current_lr(), n_iter)
-
-    #         end = time.time()
-    
-    # NOTE: template from Dassl, may not need to modify
-    # def after_epoch(self):
-    #     pass    # TODO: remove this when test is implemented
-    #     last_epoch = (self.epoch + 1) == self.max_epoch
-    #     do_test = not self.cfg.TEST.NO_TEST
-    #     meet_checkpoint_freq = (
-    #         (self.epoch + 1) % self.cfg.TRAIN.CHECKPOINT_FREQ == 0
-    #         if self.cfg.TRAIN.CHECKPOINT_FREQ > 0 else False
-    #     )
-
-    #     if do_test and self.cfg.TEST.FINAL_MODEL == "best_val":
-    #         curr_result = self.test(split="val")
-    #         is_best = curr_result > self.best_result
-    #         if is_best:
-    #             self.best_result = curr_result
-    #             self.save_model(
-    #                 self.epoch,
-    #                 self.output_dir,
-    #                 val_result=curr_result,
-    #                 model_name="model-best.pth.tar"
-    #             )
-
-    #     if meet_checkpoint_freq or last_epoch:
-    #         self.save_model(self.epoch, self.output_dir)
-
-    # template from Dassl
-    # TODO: add drawing tsne graph
-    # def after_train(self):
-    #     pass
-        #print("Finish training")
-
-        # do_test = not self.cfg.TEST.NO_TEST
-        # if do_test:
-        #     if self.cfg.TEST.FINAL_MODEL == "best_val":
-        #         print("Deploy the model with the best val performance")
-        #         self.load_model(self.output_dir)
-        #     else:
-        #         print("Deploy the last-epoch model")
-        #     self.test()
-
-        # # Show elapsed time
-        # elapsed = round(time.time() - self.time_start)
-        # elapsed = str(datetime.timedelta(seconds=elapsed))
-        # print(f"Elapsed: {elapsed}")
-
-        # # Close writer
-        # self.close_writer()
-
-    # Qi: dummy train for debugging (我不觉得需要override这个)
-    # Yilan: example train from dassl's training base class
-    # Yilan: don't need to override this method!
-    # def train(self):
-    #     """dummy train for debugging, don't need to override this method!"""
-    #     print("Calling train")
-    #     self.before_train()
-    #     print("Before train done")
-    #     for self.epoch in range(2):
-    #         self.before_epoch()
-    #         print("Before epoch done")
-    #         self.run_epoch()
-    #         print("Run epoch done")
-    #         self.after_epoch()
-    #         print("After epoch done")
-    #     self.after_train()
-    #     print("Train done")
