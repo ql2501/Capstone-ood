@@ -472,7 +472,41 @@ class NegPrompt(TrainerX):
         This is used if we want to load a model from a checkpoint and continue to train it
         '''
         print("Calling CoOp_works\\CoOp\\trainers\\negprompt.NegPrompt.load_model")
-        raise NotImplementedError
+
+        if not directory:
+            print("Note that load_model() is skipped as no pretrained model is given")
+            return
+
+        names = self.get_model_names()
+
+        # By default, the best model is loaded
+        model_file = "model-best.pth.tar"
+
+        if epoch is not None:
+            model_file = "model.pth.tar-" + str(epoch)
+
+        for name in names:
+            model_path = osp.join(directory, name, model_file)
+
+            if not osp.exists(model_path):
+                raise FileNotFoundError('Model not found at "{}"'.format(model_path))
+
+            checkpoint = load_checkpoint(model_path)
+            state_dict = checkpoint["state_dict"]
+            epoch = checkpoint["epoch"]
+
+            breakpoint()
+            # Ignore fixed token vectors
+            if "token_prefix" in state_dict:
+                del state_dict["token_prefix"]
+
+            if "token_suffix" in state_dict:
+                del state_dict["token_suffix"]
+
+            print("Loading weights to {} " 'from "{}" (epoch = {})'.format(name, model_path, epoch))
+            # set strict=False
+            self._models[name].load_state_dict(state_dict, strict=False)
+
 
     def get_ood_score(self, logits):
         '''
