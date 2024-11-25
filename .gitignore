@@ -8,6 +8,7 @@
 /CoOp_works/CoOp/output/imagenet/NegPrompt/
 /CoOp_works/Dassl.pytorch/dassl/
 /DATA/imagenet/split_fewshot/
+/DATA/texture
 /DATA/imagenet/preprocessed.pkl
 __pycache__/
 *.pyc
