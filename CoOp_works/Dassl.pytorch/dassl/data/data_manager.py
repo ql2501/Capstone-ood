@@ -33,7 +33,6 @@ def build_data_loader(
 
     if dataset_wrapper is None:
         dataset_wrapper = DatasetWrapper
-
     # Build data loader
     data_loader = torch.utils.data.DataLoader(
         dataset_wrapper(cfg, data_source, transform=tfm, is_train=is_train),

@@ -1,4 +1,13 @@
 classname_dic = {
+    "Texture" : {
+        "classes":[
+            'id',
+            'ood',
+        ],
+        "templates":[
+            'a photo of number: "{}".',
+        ]
+        },
     "mnist" : {
         "classes":[
             '0',

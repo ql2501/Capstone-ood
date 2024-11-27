@@ -498,7 +498,6 @@ class NegPrompt(TrainerX):
             state_dict = checkpoint["state_dict"]
             epoch = checkpoint["epoch"]
 
-            breakpoint()
             # Ignore fixed token vectors
             if "token_prefix" in state_dict:
                 del state_dict["token_prefix"]
@@ -583,7 +582,6 @@ class NegPrompt(TrainerX):
         else:
             split = "test"  # in case val_loader is None
             testloader = self.test_loader        
-
         # from test_nega_clip
         correct, total = 0, 0
         _pred_k, _pred_u, _labels = [], [], []
@@ -649,7 +647,7 @@ class NegPrompt(TrainerX):
                     _pred_u.append(ood_score)   # unknown class prediction
                     logits_posi_ood.append(logits_posi.data.cpu().numpy())
                     logits_nega_ood.append(logits_negas.data.cpu().numpy())
-                    
+
         acc = float(correct) * 100. / float(total)
         print('Acc: {:.5f}'.format(acc))
 
@@ -660,7 +658,6 @@ class NegPrompt(TrainerX):
         # Out-of-Distribution detction evaluation
         x1, x2 = np.max(_pred_k, axis=1), np.max(_pred_u, axis=1)   # get the max value of each row. shape: (data size,)
         results = metric_ood(x1, x2)['Bas']
-        
         # save _pred_k, -pred_u
         # score_dic = {}
         # score_dic['pred_k'] = _pred_k
