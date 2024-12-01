@@ -527,7 +527,7 @@ class NegPrompt(TrainerX):
         predictions = softmax_logits_posi.data.max(1)[1]    # (batch_size,)
 
         if self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'msp':  # maximum softmax probability, NOTE: now using this one
-            ood_score = softmax_logits_posi.data.cpu().numpy()  # (batch_size, n_classes)
+            ood_score = softmax_logits_posi #NOTE: use on cuda here for future processing #.data.cpu().numpy()  # (batch_size, n_classes)
         elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'maxlogit':
             ood_score = logits_posi.data.cpu().numpy()  # (batch_size, n_classes)
         elif self.cfg.TRAINER.NEGPROMPT.OPEN_SCORE == 'energy_oe':
@@ -583,9 +583,9 @@ class NegPrompt(TrainerX):
             split = "test"  # in case val_loader is None
             testloader = self.test_loader        
         # from test_nega_clip
-        correct, total = 0, 0
+        # correct, total = 0, 0
         _pred_k, _pred_u, _labels = [], [], []
-        logits_posi_id, logits_nega_id, logits_posi_ood, logits_nega_ood = [], [], [], []
+        # logits_posi_id, logits_nega_id, logits_posi_ood, logits_nega_ood = [], [], [], []
         self.model.eval()
         with torch.no_grad():
             # load trained text features (pos and neg?)
@@ -602,7 +602,7 @@ class NegPrompt(TrainerX):
             torch.cuda.empty_cache()
             # breakpoint()
 
-            # load test ID data
+            # load test data: 1 for OOD, 0 for ID
             tqdm_object = tqdm(testloader, total=len(testloader))
             # batch test
             for self.batch_idx, batch in enumerate(tqdm_object):
@@ -617,47 +617,59 @@ class NegPrompt(TrainerX):
                 # get metrics
                 predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
                 # here the ood_score is in the shape of logits, it's hard to understand
-                _pred_k.append(ood_score)   # known class prediction
-                correct += (predictions == labels.data).sum()
-                total += labels.size(0)
-                _labels.append(labels.data.cpu().numpy())
-                logits_posi_id.append(logits_posi.data.cpu().numpy())
-                logits_nega_id.append(logits_negas.data.cpu().numpy())
-            acc = float(correct) * 100. / float(total)
-            print('Acc: {:.5f}'.format(acc))
+                # _pred_k.append(ood_score)   # known class prediction
 
-            # load test OOD data
-            # TODO: outloader is OOD data loader, it's not implemented in dataloader yet.
-            outloader = None
-            outloader = testloader  # this is temporary! for debugging
-            assert outloader is not None, "It seems that outloader is not implemented yet. Can't use test now."
-            tqdm_object = tqdm(outloader, total=len(outloader))
-            for self.batch_idx, batch in enumerate(tqdm_object):
-                data, labels = self.parse_batch_test(batch)
+                # for all ood_score, if label is 0, add to pred_k, else add to pred_u
+                # ood_score is size (batch_size, n_classes)
+                # labels is size (batch_size,)
+                # use pytorch's tensor operation to filter out the known and unknown classes
+                _pred_k.append(ood_score[labels == 0].data.cpu().numpy())
+                _pred_u.append(ood_score[labels == 1].data.cpu().numpy())
+
+
+
+                # correct += (predictions == labels.data).sum()
+                # total += labels.size(0)
+                # _labels.append(labels.data.cpu().numpy())
+                # logits_posi_id.append(logits_posi.data.cpu().numpy())
+                # logits_nega_id.append(logits_negas.data.cpu().numpy())
+            # acc = float(correct) * 100. / float(total)
+            # print('Acc: {:.5f}'.format(acc))
+
+            # # load test OOD data
+            # # TODO: outloader is OOD data loader, it's not implemented in dataloader yet.
+            # outloader = None
+            # outloader = testloader  # this is temporary! for debugging
+            # assert outloader is not None, "It seems that outloader is not implemented yet. Can't use test now."
+            # tqdm_object = tqdm(outloader, total=len(outloader))
+            # for self.batch_idx, batch in enumerate(tqdm_object):
+            #     data, labels = self.parse_batch_test(batch)
                 
-                with torch.set_grad_enabled(False):
-                    if torch.cuda.device_count() > 1:
-                        logits, _ = self.model.module.forward_test(data, text_features)
-                        logits /= self.model.module.logit_scale.exp()
-                    else:
-                        logits, _ = self.model.forward_test(data, text_features)
-                        logits /= self.model.logit_scale.exp()
-                    predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
-                    # here the ood_score is in the shape of logits, it's hard to understand
-                    _pred_u.append(ood_score)   # unknown class prediction
-                    logits_posi_ood.append(logits_posi.data.cpu().numpy())
-                    logits_nega_ood.append(logits_negas.data.cpu().numpy())
+            #     with torch.set_grad_enabled(False):
+            #         if torch.cuda.device_count() > 1:
+            #             logits, _ = self.model.module.forward_test(data, text_features)
+            #             logits /= self.model.module.logit_scale.exp()
+            #         else:
+            #             logits, _ = self.model.forward_test(data, text_features)
+            #             logits /= self.model.logit_scale.exp()
+            #         predictions, ood_score, logits_posi, logits_negas = self.get_ood_score(logits)
+            #         # here the ood_score is in the shape of logits, it's hard to understand
+            #         _pred_u.append(ood_score)   # unknown class prediction
+            #         # logits_posi_ood.append(logits_posi.data.cpu().numpy())
+            #         # logits_nega_ood.append(logits_negas.data.cpu().numpy())
 
-        acc = float(correct) * 100. / float(total)
-        print('Acc: {:.5f}'.format(acc))
+        # acc = float(correct) * 100. / float(total)
+        # print('Acc: {:.5f}'.format(acc))
 
         _pred_k = np.concatenate(_pred_k, 0)
         _pred_u = np.concatenate(_pred_u, 0)
-        _labels = np.concatenate(_labels, 0)
+        # _labels = np.concatenate(_labels, 0)
+        print('Shape of _pred_k: ', _pred_k.shape)  # (data size, n_classes)
+        print('Shape of _pred_u: ', _pred_u.shape)  # (data size, n_classes)
         
         # Out-of-Distribution detction evaluation
         x1, x2 = np.max(_pred_k, axis=1), np.max(_pred_u, axis=1)   # get the max value of each row. shape: (data size,)
-        results = metric_ood(x1, x2)['Bas']
+        # results = metric_ood(x1, x2)['Bas']
         # save _pred_k, -pred_u
         # score_dic = {}
         # score_dic['pred_k'] = _pred_k
@@ -668,16 +680,17 @@ class NegPrompt(TrainerX):
         # score_dic['logits_nega_ood'] = np.concatenate(logits_nega_ood, 0)
         # np.save('savescores/' + options['dataset'] + '_ score_dic.npy', score_dic)
         # OSCR
-        _oscr_socre = compute_oscr(_pred_k, _pred_u, _labels)
+        # _oscr_socre = compute_oscr(_pred_k, _pred_u, _labels)
 
         auroc, aupr, fpr95 = compute_fpr(x1, x2)
-        results['ACC'] = acc
-        results['OSCR'] = _oscr_socre * 100.
-        results['FPR95'] = fpr95 * 100.
-        results['AUPR'] = aupr * 100.   
-        print('ACC: {:.5f}, OSCR: {:.5f}, FPR95: {:.5f}, AUPR: {:.5f}, TNR: {:.5f}, AUROC: {:.5f}, DTACC: {:.5f}, AUIN: {:.5f}, AUOUT: {:.5f}'.format(
-            results['ACC'], results['OSCR'], results['FPR95'], results['AUPR'], results['TNR'], results['AUROC'], results['DTACC'], results['AUIN'], results['AUOUT']))
-        return results['ACC']  # TODO: check what should be returned    
+        # results['ACC'] = acc
+        # results['OSCR'] = _oscr_socre * 100.
+        # results['FPR95'] = fpr95 * 100.
+        # results['AUPR'] = aupr * 100.   
+        # print('ACC: {:.5f}, OSCR: {:.5f}, FPR95: {:.5f}, AUPR: {:.5f}, TNR: {:.5f}, AUROC: {:.5f}, DTACC: {:.5f}, AUIN: {:.5f}, AUOUT: {:.5f}'.format(
+        #     results['ACC'], results['OSCR'], results['FPR95'], results['AUPR'], results['TNR'], results['AUROC'], results['DTACC'], results['AUIN'], results['AUOUT']))
+        print('AUROC: {:.5f}, AUPR: {:.5f}, FPR95: {:.5f}'.format(auroc, aupr, fpr95))
+        return auroc  # TODO: check what should be returned    
 
     def get_NND_loss(self, negative_text_features):
         '''
