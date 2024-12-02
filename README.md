@@ -57,10 +57,10 @@ If training on CoOp, call bash scripts to train CoOp on ImagetNet
 bash scripts/coop/main.sh imagenet rn50_ep12 end 16 16 False
 ```
 
-If training on NegPrompt, call bash scripts to train NegPrompt on ImagetNet
+If training on NegPrompt, call bash scripts to train NegPrompt on ImagetNet with openOOD Dataset
 
 ```bash
-bash scripts/negprompt/main.sh vit_b16_ep50 16
+bash scripts/negprompt/main.sh vit_b16_ep12 16 16 3
 ```
   
 If run successfully, the output models and logs should be in the path above.  

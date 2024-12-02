@@ -109,7 +109,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.NEGPROMPT.N_CTX = 16
     cfg.TRAINER.NEGPROMPT.OPEN_SCORE = 'msp'    # For OOD metric choice. In NegaPrompt, this defaults to 'OE'. But this is not callable, so we use MSP according to the paper
     cfg.TRAINER.NEGPROMPT.CSC = 0 # Class Specific Content: In NegaPrompt, this defaults to 0
-    cfg.TRAINER.NEGPROMPT.NEGA_CTX = 2 # In NegaPrompt, this defaults to 1
+    cfg.TRAINER.NEGPROMPT.NEGA_CTX = 1 # In NegaPrompt, this defaults to 1
     cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT = 1   # default
     cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT = 0.05   # default
     cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT = 0.1  # default
