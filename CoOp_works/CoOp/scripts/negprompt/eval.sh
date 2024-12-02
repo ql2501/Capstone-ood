@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# custom config
+DATA=../../DATA
+TRAINER=NegPrompt
+
+DATASET=$1
+CFG=$2
+
+# Specify the model directory and epoch
+MODEL_DIR=./output/imagenet/NegPrompt/try_config/seed1
+LOAD_EPOCH=50
+
+# Iterate over seeds
+for SEED in $SEEDS
+do
+    # DIR="output/$DATASET/$TRAINER/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}"
+    DIR="output/$DATASET/$TRAINER/try_config/seed${SEED}" # Dummy directory for config debugging
+
+    # Execute the Python script
+    python train.py \
+        --root "$DATA" \
+        --seed "$SEED" \
+        --trainer "$TRAINER" \
+        --dataset-config-file "configs/datasets/${DATASET}.yaml" \
+        --config-file "configs/trainers/$TRAINER/${CFG}.yaml" \
+        --output-dir "$DIR" \
+        --eval-only \
+        --no-train \
+        --model-dir "$MODEL_DIR" \
+        --load-epoch "$LOAD_EPOCH"
+done
