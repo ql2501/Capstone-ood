@@ -8,7 +8,7 @@ DATASET=$1    # First argument
 CFG=$2        # Second argument (config file)
 
 # Specify the model directory and epoch
-MODEL_DIR="./output/imagenet/NegPrompt/try_config/seed1"
+MODEL_DIR="scripts/negprompt/main.sh1"
 LOAD_EPOCH=50
 
 

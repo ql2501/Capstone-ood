@@ -15,8 +15,8 @@ CSC=$6  # class-specific context (False or True)
 for SEED in 1
 do
     # bash script for negprompt
-    DIR=output/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}/seed${SEED}
-    # DIR=output/${DATASET}/${TRAINER}/try_config/seed${SEED} # dummy directory for config debugging 
+    # DIR=output/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}/seed${SEED}
+    DIR=output/${DATASET}/${TRAINER}/vit16/seed${SEED} # dummy directory for config debugging 
     if [ -d "$DIR" ]; then
         echo "Oops! The results exist at ${DIR} (so skip this job)"
     else
@@ -34,5 +34,4 @@ do
         # TRAINER.COOP.N_CTX ${NCTX} \
         # TRAINER.COOP.CSC ${CSC} \
         # TRAINER.COOP.CLASS_TOKEN_POSITION ${CTP} \
-    
 done
