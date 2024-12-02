@@ -34,4 +34,5 @@ do
         # TRAINER.COOP.N_CTX ${NCTX} \
         # TRAINER.COOP.CSC ${CSC} \
         # TRAINER.COOP.CLASS_TOKEN_POSITION ${CTP} \
+    fi
 done
