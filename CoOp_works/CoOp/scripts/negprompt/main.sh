@@ -12,7 +12,7 @@ SHOTS=$5  # number of shots (1, 2, 4, 8, 16)
 CSC=$6  # class-specific context (False or True)
 
 
-for SEED in 1 2 3
+for SEED in 1
 do
     # bash script for negprompt
     DIR=output/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}/seed${SEED}

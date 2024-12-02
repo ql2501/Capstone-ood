@@ -1,18 +1,19 @@
 #!/bin/bash
 
-# custom config
+# Custom config
 DATA=../../DATA
 TRAINER=NegPrompt
 
-DATASET=$1
-CFG=$2
+DATASET=$1    # First argument
+CFG=$2        # Second argument (config file)
 
 # Specify the model directory and epoch
-MODEL_DIR=./output/imagenet/NegPrompt/try_config/seed1
+MODEL_DIR="./output/imagenet/NegPrompt/try_config/seed1"
 LOAD_EPOCH=50
 
+
 # Iterate over seeds
-for SEED in $SEEDS
+for SEED in 1
 do
     # DIR="output/$DATASET/$TRAINER/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}"
     DIR="output/$DATASET/$TRAINER/try_config/seed${SEED}" # Dummy directory for config debugging
