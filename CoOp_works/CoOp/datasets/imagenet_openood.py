@@ -3,9 +3,9 @@ from dassl.data.datasets import DATASET_REGISTRY, Datum, DatasetBase
 from dassl.utils import listdir_nohidden
 
 @DATASET_REGISTRY.register()
-class Texture(DatasetBase):
+class Imagenet_Openood(DatasetBase):
 
-    dataset_dir = "texture"
+    dataset_dir = "imagenet_openood"
 
     def __init__(self, cfg):
         root = os.path.abspath(os.path.expanduser(cfg.DATASET.ROOT))

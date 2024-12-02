@@ -3,7 +3,7 @@
 # custom config
 DATA=../../DATA
 TRAINER=NegPrompt
-DATASET=texture
+DATASET=imagenet_openood
 
 CFG=$1  # config file
 SHOTS=$2  # number of shots (1, 2, 4, 8, 16)
