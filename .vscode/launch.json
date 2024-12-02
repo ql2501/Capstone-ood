@@ -1,0 +1,42 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Python: Train Script",
+        "type": "python",
+        "request": "launch",
+        "program": "train.py",
+        "args": [
+          "--root", "../../DATA",
+          "--seed", "1",
+          "--trainer", "NegPrompt",
+          "--dataset-config-file", "configs/datasets/imagenet.yaml",
+          "--config-file", "configs/trainers/NegPrompt/vit_b16_ep50.yaml",
+          "--output-dir", "output/imagenet/NegPrompt/try_config/seed1",
+          // "DATASET.NUM_SHOTS=16"
+        ],
+        "cwd": "D:\\Documents\\MyPython\\capstone\\CoOp\\Capstone-ood\\CoOp_works\\CoOp"
+      },
+      {
+        "name": "Python: Eval Script",
+        "type": "python",
+        "request": "launch",
+        "program": "train.py",
+        "args": [
+          "--root", "../../DATA",
+          "--seed", "1",
+          "--trainer", "NegPrompt",
+          "--dataset-config-file", "configs/datasets/texture.yaml",
+          "--config-file", "configs/trainers/NegPrompt/vit_b16_ep50.yaml",
+          "--output-dir", "output/texture/NegPrompt/try_config/seed1",
+          "--eval-only",
+          "--no-train",
+          "--model-dir", ".\\output\\imagenet\\NegPrompt\\try_config\\seed1",
+          "--load-epoch", "50",
+          // "--DATASET.NUM_SHOTS", "1",
+        ],
+        "cwd": "D:\\Documents\\MyPython\\capstone\\CoOp\\Capstone-ood\\CoOp_works\\CoOp"
+      }
+    ]
+  }
+  

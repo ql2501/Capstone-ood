@@ -23,9 +23,12 @@ import datasets.imagenetv2
 import datasets.imagenet_a
 import datasets.imagenet_r
 
+from datasets.classname import *
+
 import trainers.coop
 import trainers.cocoop
 import trainers.zsclip
+import trainers.negprompt
 
 
 def print_args(args, cfg):
@@ -101,6 +104,21 @@ def extend_cfg(cfg):
 
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 
+    cfg.TRAINER.NEGPROMPT = CN()
+    cfg.TRAINER.NEGPROMPT.PREC = "fp16"
+    cfg.TRAINER.NEGPROMPT.N_CTX = 16
+    cfg.TRAINER.NEGPROMPT.OPEN_SCORE = 'msp'    # For OOD metric choice. In NegaPrompt, this defaults to 'OE'. But this is not callable, so we use MSP according to the paper
+    # if 'ImageNet' in cfg.DATASET:
+    #     print(f"cfg all dataset looks like:{cfg.DATASET}")
+    #     cfg.TRAINER.NEGPROMPT.CTX_INIT = 'a photo of a "{}"'
+    # else:
+    #     cfg.TRAINER.NEGPROMPT.CTX_INIT = classname_dic[cfg.DATASET.NAME]["templates"][0]
+    cfg.TRAINER.NEGPROMPT.CSC = 0 # Class Specific Content: In NegaPrompt, this defaults to 0
+    cfg.TRAINER.NEGPROMPT.NEGA_CTX = 1 # In NegaPrompt, this defaults to 1
+    cfg.TRAINER.NEGPROMPT.NETATIVE_WEIGHT = 1   # default
+    cfg.TRAINER.NEGPROMPT.NEGA_NEGA_WEIGHT = 0.05   # default
+    cfg.TRAINER.NEGPROMPT.DISTANCE_WEIGHT = 0.1  # default
+    cfg.DATASET.NUM_SHOTS = 16 # NOTE: temporarily, I'm sorry I can't pass that in debug console
 
 def setup_cfg(args):
     cfg = get_cfg_default()
@@ -126,11 +144,11 @@ def setup_cfg(args):
 
 
 def main(args):
-    cfg = setup_cfg(args)
+    cfg = setup_cfg(args)   # 修改了extend_cfg
     if cfg.SEED >= 0:
         print("Setting fixed seed: {}".format(cfg.SEED))
         set_random_seed(cfg.SEED)
-    setup_logger(cfg.OUTPUT_DIR)
+    setup_logger(cfg.OUTPUT_DIR)    # 先不管，应该不影响
 
     if torch.cuda.is_available() and cfg.USE_CUDA:
         torch.backends.cudnn.benchmark = True
@@ -139,7 +157,7 @@ def main(args):
     print("Collecting env info ...")
     print("** System info **\n{}\n".format(collect_env_info()))
 
-    trainer = build_trainer(cfg)
+    trainer = build_trainer(cfg)  # 需要NegPrompt的trainer class放到registry里，具体看negprompt.py
 
     if args.eval_only:
         trainer.load_model(args.model_dir, epoch=args.load_epoch)
