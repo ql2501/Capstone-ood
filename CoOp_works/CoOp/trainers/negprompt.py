@@ -877,19 +877,19 @@ class NegPrompt(TrainerX):
             if DEBUG: 
                 print(f"IF CTX_NEG CHANGED: {not torch.equal(prev, self.model.prompt_learner.ctx_negative.data)}")
                 
-            for name, param in self.model.named_parameters():
-                if param.requires_grad:  # 仅检查 requires_grad=True 的参数
-                    if param.grad is None:
-                        print(f"{name} has no gradient!")
-                    else:
-                        print(f"{name} gradient mean: {param.grad.mean()}")
+                for name, param in self.model.named_parameters():
+                    if param.requires_grad:  # 仅检查 requires_grad=True 的参数
+                        if param.grad is None:
+                            print(f"{name} has no gradient!")
+                        else:
+                            print(f"{name} gradient mean: {param.grad.mean()}")
 
 
-            # Check if ctx_negative has changed
-            if torch.equal(self.model.prompt_learner.ctx_negative, neg_prompt_before_update):
-                print("neg prompt has not changed.")
-            else:
-                print("neg prompt has changed!!")
+                # Check if ctx_negative has changed
+                if torch.equal(self.model.prompt_learner.ctx_negative, neg_prompt_before_update):
+                    print("neg prompt has not changed.")
+                else:
+                    print("neg prompt has changed!!")
 
         loss_summary = {
             "loss": loss.item(),
