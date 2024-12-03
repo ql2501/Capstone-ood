@@ -157,16 +157,23 @@ def compute_oscr(pred_k, pred_u, labels):
 
 
 def compute_fpr(pred_k, pred_u):
+        '''
+        this is 抽象
+        '''
         x1 = pred_k
         x2 = pred_u
+        # convert to numpy and squeeze to 2D
         pos = np.array(x1[:]).reshape((-1, 1))
         neg = np.array(x2[:]).reshape((-1, 1))
+        # stack the positive and negative examples
         examples = np.squeeze(np.vstack((pos, neg)))
+        # create labels: 1 for positive, 0 for negative
         labels = np.zeros(len(examples), dtype=np.int32)
         labels[:len(pos)] += 1
-        
+        # get the AUC and AUPR by sklearn preset functions
         auroc = sk.roc_auc_score(labels, examples)
         aupr = sk.average_precision_score(labels, examples)
+        # get the FPR at 95% TPR
         fpr95 = fpr_and_fdr_at_recall(labels, examples)
         
         

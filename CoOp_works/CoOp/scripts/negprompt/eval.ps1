@@ -30,3 +30,4 @@ foreach ($SEED in $SEEDS) {
 # conda activate dassl
 # cd CoOp_works/CoOp
 # powershell -File scripts/negprompt/eval.ps1 imagenet vit_b16_ep50 end 16 1 False
+# powershell -File scripts/negprompt/eval.ps1 texture vit_b16_ep50 end 16 1 False
