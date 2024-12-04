@@ -697,7 +697,7 @@ class NegPrompt(TrainerX):
         print('AUROC: {:.5f}, AUPR: {:.5f}, FPR95: {:.5f}'.format(auroc, aupr, fpr95))
 
         # draw tsne plot
-        self.draw_tsne_plot(class_num=5)
+        self.draw_tsne_plot(class_num=10)
 
         return auroc  # TODO: check what should be returned    
 
