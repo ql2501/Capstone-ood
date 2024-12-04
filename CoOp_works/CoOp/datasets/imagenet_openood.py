@@ -1,4 +1,5 @@
 import os
+import random
 from dassl.data.datasets import DATASET_REGISTRY, Datum, DatasetBase
 from dassl.utils import listdir_nohidden
 
@@ -15,6 +16,9 @@ class Imagenet_Openood(DatasetBase):
         # Read the data
         train = self.read_data("train")
         test = self.read_data("val")
+
+        # NOTE: temp shuffle test for plotting purposes
+        random.shuffle(test)
 
         # Optionally handle few-shot setup
         num_shots = cfg.DATASET.NUM_SHOTS
