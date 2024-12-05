@@ -40,7 +40,7 @@ benchmarks_dict = {
         'openimage_o'
     ], 
     'imagenet-200-negprompt-near-ood': [
-        'ssb_hard', 'NINCO'
+        'ssb_hard', 'ninco'
     ]
 }
 
