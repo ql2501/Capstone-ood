@@ -38,6 +38,9 @@ benchmarks_dict = {
     'imagenet-200-negprompt': [
         'inaturalist', 'texture',
         'openimage_o'
+    ], 
+    'imagenet-200-negprompt-near-ood': [
+        'ssb_hard', 'NINCO'
     ]
 }
 
