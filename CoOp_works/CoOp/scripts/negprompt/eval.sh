@@ -20,14 +20,14 @@ do
 
     # Execute the Python script
     python train.py \
-        --root "$DATA" \
-        --seed "$SEED" \
-        --trainer "$TRAINER" \
+        --root ${DATA} \
+        --seed ${SEED} \
+        --trainer ${TRAINER} \
         --dataset-config-file "configs/datasets/${DATASET}.yaml" \
         --config-file "configs/trainers/$TRAINER/${CFG}.yaml" \
-        --output-dir "$DIR" \
+        --output-dir ${DIR} \
         --eval-only \
         --no-train \
-        --model-dir "$MODEL_DIR" \
-        --load-epoch "$LOAD_EPOCH"
+        --model-dir ${MODEL_DIR} \
+        --load-epoch ${LOAD_EPOCH}
 done
