@@ -16,7 +16,7 @@ LOAD_EPOCH=$4
 for SEED in 1
 do
     # DIR="output/$DATASET/$TRAINER/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}"
-    DIR="output/$DATASET/$TRAINER/eval/model_dir${MODEL_DIR}/load_epoch${LOAD_EPOCH}/seed${SEED}" # Dummy directory for config debugging
+    DIR="output/$DATASET/$TRAINER/eval/load_epoch${LOAD_EPOCH}/seed${SEED}" # Dummy directory for config debugging
 
     # Execute the Python script
     python train.py \
