@@ -166,6 +166,8 @@ if __name__ == '__main__':
         args.datasets = ['mnist', 'cifar-10', 'cifar-100']
     elif args.datasets[0] == 'imagenet-200-negprompt': 
         args.datasets = ['imagenet-200-negprompt']
+    elif args.datasets[0] == 'imagenet-200-negprompt-near-ood': 
+        args.datasets = ['imagenet-200-negprompt-near-ood']
     elif args.datasets[0] == 'ood_v1.5':
         args.datasets = [
             'cifar-10', 'cifar-100', 'imagenet-200', 'imagenet-1k'
