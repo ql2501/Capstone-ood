@@ -1,0 +1,470 @@
+***************
+** Arguments **
+***************
+backbone: 
+config_file: configs/trainers/NegPrompt/vit_b16_ep12.yaml
+dataset_config_file: configs/datasets/imagenet_openood.yaml
+eval_only: False
+head: 
+load_epoch: None
+model_dir: 
+no_train: False
+opts: ['TRAINER.NEGPROMPT.NEGA_CTX', '1', 'DATASET.NUM_SHOTS', '16']
+output_dir: output/imagenet_openood/NegPrompt/vit_b16_ep12_16shots/nctx16nega_ctx1/seed1
+resume: 
+root: ../../DATA
+seed: 1
+source_domains: None
+target_domains: None
+trainer: NegPrompt
+transforms: None
+************
+** Config **
+************
+DATALOADER:
+  K_TRANSFORMS: 1
+  NUM_WORKERS: 8
+  RETURN_IMG0: False
+  TEST:
+    BATCH_SIZE: 100
+    SAMPLER: SequentialSampler
+  TRAIN_U:
+    BATCH_SIZE: 32
+    N_DOMAIN: 0
+    N_INS: 16
+    SAME_AS_X: True
+    SAMPLER: RandomSampler
+  TRAIN_X:
+    BATCH_SIZE: 32
+    N_DOMAIN: 0
+    N_INS: 16
+    SAMPLER: RandomSampler
+DATASET:
+  ALL_AS_UNLABELED: False
+  CIFAR_C_LEVEL: 1
+  CIFAR_C_TYPE: 
+  NAME: Imagenet_Openood
+  NUM_LABELED: -1
+  NUM_SHOTS: 16
+  ROOT: ../../DATA
+  SOURCE_DOMAINS: ()
+  STL10_FOLD: -1
+  SUBSAMPLE_CLASSES: all
+  TARGET_DOMAINS: ()
+  VAL_PERCENT: 0.1
+INPUT:
+  COLORJITTER_B: 0.4
+  COLORJITTER_C: 0.4
+  COLORJITTER_H: 0.1
+  COLORJITTER_S: 0.4
+  CROP_PADDING: 4
+  CUTOUT_LEN: 16
+  CUTOUT_N: 1
+  GB_K: 21
+  GB_P: 0.5
+  GN_MEAN: 0.0
+  GN_STD: 0.15
+  INTERPOLATION: bicubic
+  NO_TRANSFORM: False
+  PIXEL_MEAN: [0.48145466, 0.4578275, 0.40821073]
+  PIXEL_STD: [0.26862954, 0.26130258, 0.27577711]
+  RANDAUGMENT_M: 10
+  RANDAUGMENT_N: 2
+  RGS_P: 0.2
+  RRCROP_SCALE: (0.08, 1.0)
+  SIZE: (224, 224)
+  TRANSFORMS: ('random_resized_crop', 'random_flip', 'normalize')
+MODEL:
+  BACKBONE:
+    NAME: ViT-B/16
+    PRETRAINED: True
+  HEAD:
+    ACTIVATION: relu
+    BN: True
+    DROPOUT: 0.0
+    HIDDEN_LAYERS: ()
+    NAME: 
+  INIT_WEIGHTS: 
+OPTIM:
+  ADAM_BETA1: 0.9
+  ADAM_BETA2: 0.999
+  BASE_LR_MULT: 0.1
+  GAMMA: 0.1
+  LR: 0.002
+  LR_SCHEDULER: cosine
+  MAX_EPOCH: 12
+  MOMENTUM: 0.9
+  NAME: sgd
+  NEW_LAYERS: ()
+  RMSPROP_ALPHA: 0.99
+  SGD_DAMPNING: 0
+  SGD_NESTEROV: False
+  STAGED_LR: False
+  STEPSIZE: (-1,)
+  WARMUP_CONS_LR: 1e-05
+  WARMUP_EPOCH: 1
+  WARMUP_MIN_LR: 1e-05
+  WARMUP_RECOUNT: True
+  WARMUP_TYPE: constant
+  WEIGHT_DECAY: 0.0005
+OUTPUT_DIR: output/imagenet_openood/NegPrompt/vit_b16_ep12_16shots/nctx16nega_ctx1/seed1
+RESUME: 
+SEED: 1
+TEST:
+  COMPUTE_CMAT: False
+  EVALUATOR: Classification
+  FINAL_MODEL: last_step
+  NO_TEST: False
+  PER_CLASS_RESULT: False
+  SPLIT: test
+TRAIN:
+  CHECKPOINT_FREQ: 0
+  COUNT_ITER: train_x
+  PRINT_FREQ: 5
+TRAINER:
+  CDAC:
+    CLASS_LR_MULTI: 10
+    P_THRESH: 0.95
+    RAMPUP_COEF: 30
+    RAMPUP_ITRS: 1000
+    STRONG_TRANSFORMS: ()
+    TOPK_MATCH: 5
+  COCOOP:
+    CTX_INIT: 
+    N_CTX: 16
+    PREC: fp16
+  COOP:
+    CLASS_TOKEN_POSITION: end
+    CSC: False
+    CTX_INIT: a photo of a '{}'
+    N_CTX: 16
+    PREC: fp16
+  CROSSGRAD:
+    ALPHA_D: 0.5
+    ALPHA_F: 0.5
+    EPS_D: 1.0
+    EPS_F: 1.0
+  DAEL:
+    CONF_THRE: 0.95
+    STRONG_TRANSFORMS: ()
+    WEIGHT_U: 0.5
+  DAELDG:
+    CONF_THRE: 0.95
+    STRONG_TRANSFORMS: ()
+    WEIGHT_U: 0.5
+  DDAIG:
+    ALPHA: 0.5
+    CLAMP: False
+    CLAMP_MAX: 1.0
+    CLAMP_MIN: -1.0
+    G_ARCH: 
+    LMDA: 0.3
+    WARMUP: 0
+  DOMAINMIX:
+    ALPHA: 1.0
+    BETA: 1.0
+    TYPE: crossdomain
+  ENTMIN:
+    LMDA: 0.001
+  FIXMATCH:
+    CONF_THRE: 0.95
+    STRONG_TRANSFORMS: ()
+    WEIGHT_U: 1.0
+  M3SDA:
+    LMDA: 0.5
+    N_STEP_F: 4
+  MCD:
+    N_STEP_F: 4
+  MEANTEACHER:
+    EMA_ALPHA: 0.999
+    RAMPUP: 5
+    WEIGHT_U: 1.0
+  MIXMATCH:
+    MIXUP_BETA: 0.75
+    RAMPUP: 20000
+    TEMP: 2.0
+    WEIGHT_U: 100.0
+  MME:
+    LMDA: 0.1
+  NAME: NegPrompt
+  NEGPROMPT:
+    CSC: 0
+    DISTANCE_WEIGHT: 0.1
+    NEGA_CTX: 1
+    NEGA_NEGA_WEIGHT: 0.05
+    NETATIVE_WEIGHT: 1
+    N_CTX: 16
+    OPEN_SCORE: msp
+    PREC: fp16
+  SE:
+    CONF_THRE: 0.95
+    EMA_ALPHA: 0.999
+    RAMPUP: 300
+USE_CUDA: True
+VERBOSE: True
+VERSION: 1
+Collecting env info ...
+** System info **
+PyTorch version: 2.5.1+cu124
+Is debug build: False
+CUDA used to build PyTorch: 12.4
+ROCM used to build PyTorch: N/A
+
+OS: Ubuntu 22.04.3 LTS (x86_64)
+GCC version: (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0
+Clang version: 14.0.0-1ubuntu1.1
+CMake version: version 3.30.5
+Libc version: glibc-2.35
+
+Python version: 3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 13:27:36) [GCC 11.2.0] (64-bit runtime)
+Python platform: Linux-6.1.85+-x86_64-with-glibc2.35
+Is CUDA available: True
+CUDA runtime version: 12.2.140
+CUDA_MODULE_LOADING set to: LAZY
+GPU models and configuration: GPU 0: Tesla T4
+Nvidia driver version: 535.104.05
+cuDNN version: Probably one of the following:
+/usr/lib/x86_64-linux-gnu/libcudnn.so.8.9.6
+/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.8.9.6
+/usr/lib/x86_64-linux-gnu/libcudnn_adv_train.so.8.9.6
+/usr/lib/x86_64-linux-gnu/libcudnn_cnn_infer.so.8.9.6
+/usr/lib/x86_64-linux-gnu/libcudnn_cnn_train.so.8.9.6
+/usr/lib/x86_64-linux-gnu/libcudnn_ops_infer.so.8.9.6
+/usr/lib/x86_64-linux-gnu/libcudnn_ops_train.so.8.9.6
+HIP runtime version: N/A
+MIOpen runtime version: N/A
+Is XNNPACK available: True
+
+CPU:
+Architecture:                         x86_64
+CPU op-mode(s):                       32-bit, 64-bit
+Address sizes:                        46 bits physical, 48 bits virtual
+Byte Order:                           Little Endian
+CPU(s):                               2
+On-line CPU(s) list:                  0,1
+Vendor ID:                            GenuineIntel
+Model name:                           Intel(R) Xeon(R) CPU @ 2.20GHz
+CPU family:                           6
+Model:                                79
+Thread(s) per core:                   2
+Core(s) per socket:                   1
+Socket(s):                            1
+Stepping:                             0
+BogoMIPS:                             4399.99
+Flags:                                fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch invpcid_single ssbd ibrs ibpb stibp fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm rdseed adx smap xsaveopt arat md_clear arch_capabilities
+Hypervisor vendor:                    KVM
+Virtualization type:                  full
+L1d cache:                            32 KiB (1 instance)
+L1i cache:                            32 KiB (1 instance)
+L2 cache:                             256 KiB (1 instance)
+L3 cache:                             55 MiB (1 instance)
+NUMA node(s):                         1
+NUMA node0 CPU(s):                    0,1
+Vulnerability Gather data sampling:   Not affected
+Vulnerability Itlb multihit:          Not affected
+Vulnerability L1tf:                   Mitigation; PTE Inversion
+Vulnerability Mds:                    Vulnerable; SMT Host state unknown
+Vulnerability Meltdown:               Vulnerable
+Vulnerability Mmio stale data:        Vulnerable
+Vulnerability Reg file data sampling: Not affected
+Vulnerability Retbleed:               Vulnerable
+Vulnerability Spec rstack overflow:   Not affected
+Vulnerability Spec store bypass:      Vulnerable
+Vulnerability Spectre v1:             Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers
+Vulnerability Spectre v2:             Vulnerable; IBPB: disabled; STIBP: disabled; PBRSB-eIBRS: Not affected; BHI: Vulnerable (Syscall hardening enabled)
+Vulnerability Srbds:                  Not affected
+Vulnerability Tsx async abort:        Vulnerable
+
+Versions of relevant libraries:
+[pip3] flake8==3.7.9
+[pip3] numpy==2.1.3
+[pip3] torch==2.5.1
+[pip3] torchvision==0.20.1
+[pip3] triton==3.1.0
+[conda] blas                      1.0                         mkl  
+[conda] cudatoolkit               10.2.89              hfd86e86_1  
+[conda] ffmpeg                    4.3                  hf484d3e_0    pytorch
+[conda] libjpeg-turbo             2.0.0                h9bf148f_0    pytorch
+[conda] mkl                       2023.1.0         h213fc3f_46344  
+[conda] mkl-service               2.4.0            py38h5eee18b_1  
+[conda] mkl_fft                   1.3.8            py38h5eee18b_0  
+[conda] mkl_random                1.2.4            py38hdb19cb5_0  
+[conda] numpy                     1.24.3           py38hf6e8229_1  
+[conda] numpy-base                1.24.3           py38h060ed82_1  
+[conda] pytorch                   2.4.1               py3.8_cpu_0    pytorch
+[conda] pytorch-mutex             1.0                         cpu    pytorch
+[conda] torchvision               0.20.0                 py38_cpu    pytorch
+        Pillow (11.0.0)
+
+Loading trainer: NegPrompt
+Loading dataset: Imagenet_Openood
+Creating a 16-shot dataset
+Building transform_train
++ random resized crop (size=(224, 224), scale=(0.08, 1.0))
++ random flip
++ to torch tensor of range [0, 1]
++ normalization (mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
+Building transform_test
++ resize the smaller edge to 224
++ 224x224 center crop
++ to torch tensor of range [0, 1]
++ normalization (mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
+---------  ----------------
+Dataset    Imagenet_Openood
+# classes  100
+# train_x  1,600
+# val      15,000
+# test     15,000
+---------  ----------------
+Loading CLIP (backbone: ViT-B/16)
+Successfully loading CLIP (backbone: ViT-B/16)
+--------------------------------------------------------------------------------
+Building NegPrompt's custom CLIP
+Initial context: "a photo of number: "
+Number of context words (tokens): 4
+Successfully building NegPrompt's custom CLIP
+--------------------------------------------------------------------------------
+Turning off gradients in both the image and the text encoder...
+Remaining active gradient in prompt_learner.ctx_negative, paramter shape torch.Size([1, 4, 512])
+Start loading positive prompts from model path: output/imagenet/CoOp/vit_b16_ep50_16shots/nctx16_cscFalse_ctpend/seed1/prompt_learner/model.pth.tar-50
+Loaded positive prompts: 
+tensor([[ 0.0594,  0.0089,  0.0527,  ..., -0.0013,  0.0163, -0.0125],
+        [ 0.0443, -0.0388,  0.0515,  ..., -0.0027,  0.0936,  0.0673],
+        [ 0.0344, -0.0373,  0.0508,  ..., -0.1120,  0.0122, -0.0126],
+        [-0.0042, -0.0094, -0.0069,  ...,  0.0381, -0.0061,  0.0036]],
+       device='cuda:0', dtype=torch.float16)
+After update, the shape of ctx_positive is torch.Size([1, 4, 512])
+Positive prompt from Pretrained CoOp loaded
+Adding ctx_negative to optimizer
+Finished building model NegPrompt
+Loading evaluator: Classification
+No checkpoint found, train from scratch
+Initialize tensorboard (log_dir=output/imagenet_openood/NegPrompt/vit_b16_ep12_16shots/nctx16nega_ctx1/seed1/tensorboard)
+epoch [1/12] batch [5/50] time 0.665 (1.349) data 0.008 (0.325) loss 19.7811 (20.3468) loss_positive 4.7500 (4.6961) NIS Loss 19.7812 (20.3469) NND Loss 0.0000 (0.0000) NPD Loss -0.0010 (-0.0003) lr 1.0000e-05 eta 0:13:22
+epoch [1/12] batch [10/50] time 0.680 (1.004) data 0.001 (0.164) loss 20.0295 (19.9949) loss_positive 4.7305 (4.6945) NIS Loss 20.0312 (19.9953) NND Loss 0.0000 (0.0000) NPD Loss -0.0179 (-0.0045) lr 1.0000e-05 eta 0:09:52
+epoch [1/12] batch [15/50] time 0.716 (0.893) data 0.009 (0.111) loss 18.3526 (19.4930) loss_positive 4.6680 (4.6729) NIS Loss 18.3594 (19.4948) NND Loss -0.0001 (0.0000) NPD Loss -0.0681 (-0.0182) lr 1.0000e-05 eta 0:08:42
+epoch [1/12] batch [20/50] time 0.443 (0.787) data 0.003 (0.084) loss 16.9237 (19.0389) loss_positive 4.8906 (4.7115) NIS Loss 16.9375 (19.0430) NND Loss 0.0001 (0.0000) NPD Loss -0.1384 (-0.0410) lr 1.0000e-05 eta 0:07:36
+epoch [1/12] batch [25/50] time 0.445 (0.716) data 0.001 (0.067) loss 15.9782 (18.5911) loss_positive 4.7891 (4.7081) NIS Loss 16.0000 (18.5981) NND Loss 0.0000 (0.0000) NPD Loss -0.2179 (-0.0698) lr 1.0000e-05 eta 0:06:51
+epoch [1/12] batch [30/50] time 0.435 (0.669) data 0.001 (0.056) loss 15.4932 (18.1710) loss_positive 4.5820 (4.7095) NIS Loss 15.5234 (18.1812) NND Loss 0.0000 (0.0000) NPD Loss -0.3022 (-0.1029) lr 1.0000e-05 eta 0:06:21
+epoch [1/12] batch [35/50] time 0.379 (0.636) data 0.001 (0.048) loss 14.2982 (17.6645) loss_positive 4.8008 (4.7162) NIS Loss 14.3359 (17.6783) NND Loss 0.0000 (0.0000) NPD Loss -0.3774 (-0.1380) lr 1.0000e-05 eta 0:05:59
+epoch [1/12] batch [40/50] time 0.457 (0.605) data 0.000 (0.042) loss 13.0804 (17.1503) loss_positive 4.5586 (4.7140) NIS Loss 13.1250 (17.1676) NND Loss -0.0000 (0.0000) NPD Loss -0.4462 (-0.1731) lr 1.0000e-05 eta 0:05:38
+epoch [1/12] batch [45/50] time 0.441 (0.587) data 0.001 (0.038) loss 11.5718 (16.5902) loss_positive 4.9375 (4.7229) NIS Loss 11.6250 (16.6111) NND Loss 0.0000 (0.0000) NPD Loss -0.5318 (-0.2090) lr 1.0000e-05 eta 0:05:25
+epoch [1/12] batch [50/50] time 0.437 (0.574) data 0.001 (0.034) loss 11.6401 (16.0667) loss_positive 4.7734 (4.7259) NIS Loss 11.7031 (16.0914) NND Loss -0.0001 (0.0000) NPD Loss -0.6299 (-0.2473) lr 2.0000e-03 eta 0:05:15
+epoch [2/12] batch [5/50] time 0.424 (0.989) data 0.001 (0.279) loss 11.1443 (13.5395) loss_positive 4.6484 (4.7219) NIS Loss 11.2500 (13.6000) NND Loss 0.0000 (0.0000) NPD Loss -1.0574 (-0.6047) lr 2.0000e-03 eta 0:08:59
+epoch [2/12] batch [10/50] time 0.438 (0.709) data 0.000 (0.140) loss 9.8399 (11.9607) loss_positive 4.8320 (4.7371) NIS Loss 9.9453 (12.0445) NND Loss -0.0000 (-0.0000) NPD Loss -1.0545 (-0.8378) lr 2.0000e-03 eta 0:06:23
+epoch [2/12] batch [15/50] time 0.446 (0.618) data 0.000 (0.093) loss 10.5285 (11.4067) loss_positive 4.6836 (4.7091) NIS Loss 10.6328 (11.4974) NND Loss -0.0000 (-0.0000) NPD Loss -1.0435 (-0.9068) lr 2.0000e-03 eta 0:05:30
+epoch [2/12] batch [20/50] time 0.606 (0.598) data 0.001 (0.070) loss 10.1133 (11.0991) loss_positive 4.7617 (4.7273) NIS Loss 10.2188 (11.1934) NND Loss 0.0000 (-0.0000) NPD Loss -1.0549 (-0.9425) lr 2.0000e-03 eta 0:05:17
+epoch [2/12] batch [25/50] time 0.683 (0.604) data 0.013 (0.057) loss 9.9007 (10.9317) loss_positive 4.6523 (4.7172) NIS Loss 10.0078 (11.0284) NND Loss 0.0001 (-0.0000) NPD Loss -1.0709 (-0.9670) lr 2.0000e-03 eta 0:05:17
+epoch [2/12] batch [30/50] time 0.668 (0.612) data 0.012 (0.049) loss 10.0162 (10.7920) loss_positive 4.5664 (4.7077) NIS Loss 10.1250 (10.8906) NND Loss -0.0001 (-0.0000) NPD Loss -1.0877 (-0.9859) lr 2.0000e-03 eta 0:05:18
+epoch [2/12] batch [35/50] time 0.372 (0.589) data 0.001 (0.042) loss 10.1941 (10.7152) loss_positive 4.8398 (4.7171) NIS Loss 10.3047 (10.8154) NND Loss -0.0001 (-0.0000) NPD Loss -1.1061 (-1.0021) lr 2.0000e-03 eta 0:05:03
+epoch [2/12] batch [40/50] time 0.372 (0.563) data 0.000 (0.037) loss 10.0676 (10.6273) loss_positive 4.6445 (4.7239) NIS Loss 10.1797 (10.7289) NND Loss 0.0000 (-0.0000) NPD Loss -1.1204 (-1.0162) lr 2.0000e-03 eta 0:04:46
+epoch [2/12] batch [45/50] time 0.386 (0.542) data 0.000 (0.033) loss 10.1913 (10.5808) loss_positive 4.6562 (4.7211) NIS Loss 10.3047 (10.6837) NND Loss -0.0000 (-0.0000) NPD Loss -1.1336 (-1.0287) lr 2.0000e-03 eta 0:04:33
+epoch [2/12] batch [50/50] time 0.374 (0.534) data 0.000 (0.029) loss 10.0573 (10.5376) loss_positive 4.6758 (4.7188) NIS Loss 10.1719 (10.6416) NND Loss -0.0001 (-0.0000) NPD Loss -1.1459 (-1.0399) lr 1.9659e-03 eta 0:04:27
+epoch [3/12] batch [5/50] time 0.579 (1.372) data 0.004 (0.355) loss 10.3688 (10.0427) loss_positive 4.8906 (4.7086) NIS Loss 10.4844 (10.1578) NND Loss -0.0000 (-0.0000) NPD Loss -1.1553 (-1.1516) lr 1.9659e-03 eta 0:11:19
+epoch [3/12] batch [10/50] time 0.678 (1.024) data 0.010 (0.182) loss 10.3758 (10.0680) loss_positive 4.7812 (4.6879) NIS Loss 10.4922 (10.1836) NND Loss 0.0000 (0.0000) NPD Loss -1.1641 (-1.1561) lr 1.9659e-03 eta 0:08:21
+epoch [3/12] batch [15/50] time 0.456 (0.895) data 0.001 (0.124) loss 10.2968 (10.0918) loss_positive 4.6758 (4.7208) NIS Loss 10.4141 (10.2078) NND Loss -0.0000 (-0.0000) NPD Loss -1.1725 (-1.1604) lr 1.9659e-03 eta 0:07:14
+epoch [3/12] batch [20/50] time 0.438 (0.780) data 0.001 (0.093) loss 10.0618 (10.1234) loss_positive 4.4688 (4.7266) NIS Loss 10.1797 (10.2398) NND Loss 0.0001 (0.0000) NPD Loss -1.1792 (-1.1645) lr 1.9659e-03 eta 0:06:14
+epoch [3/12] batch [25/50] time 0.422 (0.712) data 0.000 (0.074) loss 10.2489 (10.1279) loss_positive 4.6680 (4.7295) NIS Loss 10.3672 (10.2447) NND Loss 0.0001 (0.0000) NPD Loss -1.1829 (-1.1680) lr 1.9659e-03 eta 0:05:38
+epoch [3/12] batch [30/50] time 0.418 (0.667) data 0.000 (0.062) loss 10.0224 (10.1220) loss_positive 4.5312 (4.7216) NIS Loss 10.1406 (10.2391) NND Loss 0.0000 (0.0000) NPD Loss -1.1819 (-1.1704) lr 1.9659e-03 eta 0:05:13
+epoch [3/12] batch [35/50] time 0.378 (0.631) data 0.001 (0.053) loss 10.3192 (10.1207) loss_positive 4.5469 (4.7250) NIS Loss 10.4375 (10.2379) NND Loss 0.0000 (0.0000) NPD Loss -1.1829 (-1.1721) lr 1.9659e-03 eta 0:04:53
+epoch [3/12] batch [40/50] time 0.420 (0.604) data 0.001 (0.047) loss 9.9440 (10.1317) loss_positive 4.6641 (4.7209) NIS Loss 10.0625 (10.2490) NND Loss 0.0001 (0.0000) NPD Loss -1.1849 (-1.1735) lr 1.9659e-03 eta 0:04:38
+epoch [3/12] batch [45/50] time 0.459 (0.587) data 0.001 (0.042) loss 10.1779 (10.1380) loss_positive 4.7578 (4.7181) NIS Loss 10.2969 (10.2556) NND Loss -0.0000 (-0.0000) NPD Loss -1.1892 (-1.1751) lr 1.9659e-03 eta 0:04:27
+epoch [3/12] batch [50/50] time 0.452 (0.575) data 0.001 (0.038) loss 10.5212 (10.1290) loss_positive 4.6836 (4.7222) NIS Loss 10.6406 (10.2467) NND Loss 0.0000 (0.0000) NPD Loss -1.1944 (-1.1768) lr 1.8660e-03 eta 0:04:18
+epoch [4/12] batch [5/50] time 0.451 (1.057) data 0.000 (0.388) loss 10.3254 (10.0709) loss_positive 4.7383 (4.6602) NIS Loss 10.4453 (10.1906) NND Loss 0.0000 (-0.0000) NPD Loss -1.1994 (-1.1975) lr 1.8660e-03 eta 0:07:50
+epoch [4/12] batch [10/50] time 0.571 (0.756) data 0.001 (0.194) loss 10.4343 (10.1628) loss_positive 4.8672 (4.6863) NIS Loss 10.5547 (10.2828) NND Loss 0.0000 (0.0000) NPD Loss -1.2042 (-1.1999) lr 1.8660e-03 eta 0:05:32
+epoch [4/12] batch [15/50] time 0.427 (0.676) data 0.000 (0.131) loss 10.2151 (10.1376) loss_positive 4.5938 (4.7016) NIS Loss 10.3359 (10.2578) NND Loss 0.0000 (0.0000) NPD Loss -1.2086 (-1.2022) lr 1.8660e-03 eta 0:04:53
+epoch [4/12] batch [20/50] time 0.617 (0.660) data 0.006 (0.100) loss 10.0504 (10.0944) loss_positive 4.5156 (4.6959) NIS Loss 10.1719 (10.2148) NND Loss 0.0000 (0.0000) NPD Loss -1.2143 (-1.2046) lr 1.8660e-03 eta 0:04:43
+epoch [4/12] batch [25/50] time 0.694 (0.663) data 0.021 (0.082) loss 9.9874 (10.1140) loss_positive 4.8867 (4.7108) NIS Loss 10.1094 (10.2347) NND Loss 0.0000 (0.0000) NPD Loss -1.2194 (-1.2072) lr 1.8660e-03 eta 0:04:41
+epoch [4/12] batch [30/50] time 0.433 (0.648) data 0.001 (0.068) loss 9.7841 (10.1179) loss_positive 4.6055 (4.7118) NIS Loss 9.9062 (10.2388) NND Loss 0.0001 (0.0000) NPD Loss -1.2218 (-1.2094) lr 1.8660e-03 eta 0:04:32
+epoch [4/12] batch [35/50] time 0.379 (0.616) data 0.001 (0.059) loss 10.1511 (10.1213) loss_positive 4.5391 (4.7133) NIS Loss 10.2734 (10.2424) NND Loss -0.0001 (0.0000) NPD Loss -1.2231 (-1.2113) lr 1.8660e-03 eta 0:04:15
+epoch [4/12] batch [40/50] time 0.386 (0.587) data 0.000 (0.051) loss 10.0495 (10.1272) loss_positive 4.8281 (4.7179) NIS Loss 10.1719 (10.2484) NND Loss 0.0000 (0.0000) NPD Loss -1.2233 (-1.2128) lr 1.8660e-03 eta 0:04:00
+epoch [4/12] batch [45/50] time 0.385 (0.564) data 0.000 (0.046) loss 10.0886 (10.1222) loss_positive 4.8711 (4.7263) NIS Loss 10.2109 (10.2436) NND Loss -0.0000 (0.0000) NPD Loss -1.2231 (-1.2140) lr 1.8660e-03 eta 0:03:48
+epoch [4/12] batch [50/50] time 0.386 (0.546) data 0.001 (0.041) loss 10.0182 (10.1093) loss_positive 4.9258 (4.7258) NIS Loss 10.1406 (10.2308) NND Loss -0.0001 (-0.0000) NPD Loss -1.2240 (-1.2149) lr 1.7071e-03 eta 0:03:38
+epoch [5/12] batch [5/50] time 0.647 (1.478) data 0.007 (0.371) loss 10.2603 (10.1259) loss_positive 4.8086 (4.7922) NIS Loss 10.3828 (10.2484) NND Loss 0.0001 (0.0000) NPD Loss -1.2256 (-1.2251) lr 1.7071e-03 eta 0:09:43
+epoch [5/12] batch [10/50] time 0.452 (1.027) data 0.000 (0.187) loss 10.0414 (10.1540) loss_positive 4.6562 (4.7309) NIS Loss 10.1641 (10.2766) NND Loss 0.0001 (0.0000) NPD Loss -1.2265 (-1.2255) lr 1.7071e-03 eta 0:06:40
+epoch [5/12] batch [15/50] time 0.572 (0.852) data 0.009 (0.126) loss 9.7212 (10.1055) loss_positive 4.8281 (4.7307) NIS Loss 9.8438 (10.2281) NND Loss -0.0000 (0.0000) NPD Loss -1.2257 (-1.2258) lr 1.7071e-03 eta 0:05:27
+epoch [5/12] batch [20/50] time 0.443 (0.754) data 0.000 (0.095) loss 10.3071 (10.1177) loss_positive 4.7969 (4.7369) NIS Loss 10.4297 (10.2402) NND Loss -0.0000 (0.0000) NPD Loss -1.2261 (-1.2258) lr 1.7071e-03 eta 0:04:46
+epoch [5/12] batch [25/50] time 0.465 (0.696) data 0.000 (0.076) loss 10.2366 (10.1308) loss_positive 4.8750 (4.7411) NIS Loss 10.3594 (10.2534) NND Loss -0.0000 (0.0000) NPD Loss -1.2277 (-1.2260) lr 1.7071e-03 eta 0:04:21
+epoch [5/12] batch [30/50] time 0.570 (0.658) data 0.000 (0.063) loss 10.2364 (10.1302) loss_positive 4.7930 (4.7447) NIS Loss 10.3594 (10.2529) NND Loss 0.0000 (0.0000) NPD Loss -1.2293 (-1.2265) lr 1.7071e-03 eta 0:04:03
+epoch [5/12] batch [35/50] time 0.454 (0.646) data 0.002 (0.055) loss 9.9706 (10.1327) loss_positive 4.7188 (4.7359) NIS Loss 10.0938 (10.2554) NND Loss 0.0000 (0.0000) NPD Loss -1.2316 (-1.2271) lr 1.7071e-03 eta 0:03:55
+epoch [5/12] batch [40/50] time 0.459 (0.623) data 0.001 (0.048) loss 10.0406 (10.1391) loss_positive 4.8008 (4.7321) NIS Loss 10.1641 (10.2619) NND Loss 0.0000 (0.0000) NPD Loss -1.2347 (-1.2278) lr 1.7071e-03 eta 0:03:44
+epoch [5/12] batch [45/50] time 0.456 (0.605) data 0.001 (0.043) loss 10.0168 (10.1276) loss_positive 4.6797 (4.7271) NIS Loss 10.1406 (10.2505) NND Loss -0.0001 (0.0000) NPD Loss -1.2382 (-1.2289) lr 1.7071e-03 eta 0:03:34
+epoch [5/12] batch [50/50] time 0.384 (0.585) data 0.000 (0.039) loss 10.0869 (10.1069) loss_positive 4.6797 (4.7276) NIS Loss 10.2109 (10.2298) NND Loss -0.0000 (0.0000) NPD Loss -1.2404 (-1.2299) lr 1.5000e-03 eta 0:03:24
+epoch [6/12] batch [5/50] time 0.427 (0.992) data 0.001 (0.318) loss 10.2743 (10.1587) loss_positive 4.8750 (4.7211) NIS Loss 10.3984 (10.2828) NND Loss 0.0000 (0.0000) NPD Loss -1.2416 (-1.2412) lr 1.5000e-03 eta 0:05:42
+epoch [6/12] batch [10/50] time 0.430 (0.716) data 0.001 (0.159) loss 9.9774 (10.1001) loss_positive 4.6641 (4.7285) NIS Loss 10.1016 (10.2242) NND Loss -0.0000 (0.0000) NPD Loss -1.2416 (-1.2416) lr 1.5000e-03 eta 0:04:03
+epoch [6/12] batch [15/50] time 0.693 (0.655) data 0.001 (0.107) loss 10.0867 (10.1326) loss_positive 4.9023 (4.7521) NIS Loss 10.2109 (10.2568) NND Loss 0.0000 (0.0000) NPD Loss -1.2421 (-1.2417) lr 1.5000e-03 eta 0:03:39
+epoch [6/12] batch [20/50] time 0.726 (0.663) data 0.007 (0.082) loss 10.2585 (10.1434) loss_positive 4.7695 (4.7391) NIS Loss 10.3828 (10.2676) NND Loss 0.0000 (0.0000) NPD Loss -1.2432 (-1.2419) lr 1.5000e-03 eta 0:03:38
+epoch [6/12] batch [25/50] time 0.690 (0.671) data 0.007 (0.068) loss 10.0006 (10.1286) loss_positive 4.7812 (4.7397) NIS Loss 10.1250 (10.2528) NND Loss -0.0000 (0.0000) NPD Loss -1.2445 (-1.2423) lr 1.5000e-03 eta 0:03:38
+epoch [6/12] batch [30/50] time 0.697 (0.676) data 0.007 (0.057) loss 10.1098 (10.1327) loss_positive 4.6797 (4.7406) NIS Loss 10.2344 (10.2570) NND Loss -0.0000 (0.0000) NPD Loss -1.2457 (-1.2428) lr 1.5000e-03 eta 0:03:36
+epoch [6/12] batch [35/50] time 0.692 (0.677) data 0.004 (0.050) loss 10.0237 (10.1221) loss_positive 4.7422 (4.7465) NIS Loss 10.1484 (10.2464) NND Loss 0.0000 (0.0000) NPD Loss -1.2476 (-1.2434) lr 1.5000e-03 eta 0:03:33
+epoch [6/12] batch [40/50] time 0.382 (0.650) data 0.000 (0.044) loss 10.0470 (10.1293) loss_positive 4.8594 (4.7405) NIS Loss 10.1719 (10.2537) NND Loss 0.0000 (0.0000) NPD Loss -1.2491 (-1.2441) lr 1.5000e-03 eta 0:03:21
+epoch [6/12] batch [45/50] time 0.389 (0.621) data 0.000 (0.039) loss 10.1482 (10.1365) loss_positive 4.6797 (4.7363) NIS Loss 10.2734 (10.2609) NND Loss -0.0000 (0.0000) NPD Loss -1.2524 (-1.2448) lr 1.5000e-03 eta 0:03:09
+epoch [6/12] batch [50/50] time 0.387 (0.598) data 0.000 (0.035) loss 10.0463 (10.1342) loss_positive 4.8594 (4.7270) NIS Loss 10.1719 (10.2587) NND Loss 0.0000 (0.0000) NPD Loss -1.2553 (-1.2458) lr 1.2588e-03 eta 0:02:59
+epoch [7/12] batch [5/50] time 0.426 (1.017) data 0.001 (0.341) loss 10.1556 (10.1166) loss_positive 4.6797 (4.7313) NIS Loss 10.2812 (10.2422) NND Loss -0.0000 (0.0000) NPD Loss -1.2569 (-1.2562) lr 1.2588e-03 eta 0:05:00
+epoch [7/12] batch [10/50] time 0.553 (0.791) data 0.001 (0.172) loss 10.1243 (10.1259) loss_positive 4.5391 (4.7070) NIS Loss 10.2500 (10.2516) NND Loss -0.0000 (-0.0000) NPD Loss -1.2565 (-1.2565) lr 1.2588e-03 eta 0:03:49
+epoch [7/12] batch [15/50] time 0.583 (0.734) data 0.001 (0.116) loss 9.7337 (10.1223) loss_positive 4.8281 (4.7081) NIS Loss 9.8594 (10.2479) NND Loss 0.0000 (-0.0000) NPD Loss -1.2564 (-1.2564) lr 1.2588e-03 eta 0:03:29
+epoch [7/12] batch [20/50] time 0.528 (0.709) data 0.010 (0.090) loss 10.0149 (10.1286) loss_positive 4.6445 (4.7051) NIS Loss 10.1406 (10.2543) NND Loss 0.0000 (0.0000) NPD Loss -1.2569 (-1.2565) lr 1.2588e-03 eta 0:03:18
+epoch [7/12] batch [25/50] time 0.457 (0.655) data 0.000 (0.072) loss 10.2180 (10.1393) loss_positive 4.5820 (4.7089) NIS Loss 10.3438 (10.2650) NND Loss 0.0000 (0.0000) NPD Loss -1.2575 (-1.2566) lr 1.2588e-03 eta 0:03:00
+epoch [7/12] batch [30/50] time 0.432 (0.619) data 0.000 (0.060) loss 10.4445 (10.1337) loss_positive 4.7852 (4.7117) NIS Loss 10.5703 (10.2594) NND Loss -0.0000 (0.0000) NPD Loss -1.2584 (-1.2569) lr 1.2588e-03 eta 0:02:47
+epoch [7/12] batch [35/50] time 0.466 (0.602) data 0.001 (0.051) loss 10.1553 (10.1334) loss_positive 4.8438 (4.7189) NIS Loss 10.2812 (10.2592) NND Loss 0.0000 (0.0000) NPD Loss -1.2596 (-1.2572) lr 1.2588e-03 eta 0:02:39
+epoch [7/12] batch [40/50] time 0.396 (0.576) data 0.000 (0.045) loss 9.9833 (10.1227) loss_positive 4.5938 (4.7202) NIS Loss 10.1094 (10.2484) NND Loss 0.0000 (0.0000) NPD Loss -1.2611 (-1.2576) lr 1.2588e-03 eta 0:02:29
+epoch [7/12] batch [45/50] time 0.443 (0.559) data 0.001 (0.040) loss 10.1082 (10.1232) loss_positive 4.8555 (4.7301) NIS Loss 10.2344 (10.2490) NND Loss 0.0000 (0.0000) NPD Loss -1.2619 (-1.2581) lr 1.2588e-03 eta 0:02:22
+epoch [7/12] batch [50/50] time 0.455 (0.548) data 0.001 (0.036) loss 10.1784 (10.1145) loss_positive 4.7422 (4.7276) NIS Loss 10.3047 (10.2403) NND Loss -0.0000 (0.0000) NPD Loss -1.2626 (-1.2585) lr 1.0000e-03 eta 0:02:17
+epoch [8/12] batch [5/50] time 0.464 (1.006) data 0.001 (0.367) loss 10.3503 (10.1300) loss_positive 4.7891 (4.6641) NIS Loss 10.4766 (10.2562) NND Loss -0.0000 (0.0000) NPD Loss -1.2630 (-1.2629) lr 1.0000e-03 eta 0:04:06
+epoch [8/12] batch [10/50] time 0.427 (0.721) data 0.000 (0.184) loss 10.1549 (10.1549) loss_positive 4.6914 (4.7012) NIS Loss 10.2812 (10.2812) NND Loss -0.0000 (0.0000) NPD Loss -1.2635 (-1.2631) lr 1.0000e-03 eta 0:02:53
+epoch [8/12] batch [15/50] time 0.437 (0.628) data 0.000 (0.124) loss 9.9986 (10.1086) loss_positive 4.7422 (4.7174) NIS Loss 10.1250 (10.2349) NND Loss -0.0000 (-0.0000) NPD Loss -1.2641 (-1.2633) lr 1.0000e-03 eta 0:02:27
+epoch [8/12] batch [20/50] time 0.687 (0.621) data 0.009 (0.094) loss 10.3579 (10.1154) loss_positive 4.7969 (4.7230) NIS Loss 10.4844 (10.2418) NND Loss 0.0001 (-0.0000) NPD Loss -1.2645 (-1.2635) lr 1.0000e-03 eta 0:02:22
+epoch [8/12] batch [25/50] time 0.655 (0.623) data 0.001 (0.076) loss 9.9750 (10.0933) loss_positive 4.6875 (4.7189) NIS Loss 10.1016 (10.2197) NND Loss -0.0000 (0.0000) NPD Loss -1.2652 (-1.2638) lr 1.0000e-03 eta 0:02:20
+epoch [8/12] batch [30/50] time 0.445 (0.612) data 0.001 (0.064) loss 10.1234 (10.0712) loss_positive 4.7578 (4.7223) NIS Loss 10.2500 (10.1977) NND Loss 0.0001 (0.0000) NPD Loss -1.2658 (-1.2641) lr 1.0000e-03 eta 0:02:14
+epoch [8/12] batch [35/50] time 0.389 (0.585) data 0.001 (0.055) loss 10.2093 (10.0845) loss_positive 4.6914 (4.7220) NIS Loss 10.3359 (10.2109) NND Loss 0.0000 (0.0000) NPD Loss -1.2660 (-1.2644) lr 1.0000e-03 eta 0:02:05
+epoch [8/12] batch [40/50] time 0.415 (0.561) data 0.000 (0.048) loss 10.0218 (10.0923) loss_positive 4.6797 (4.7148) NIS Loss 10.1484 (10.2188) NND Loss -0.0001 (0.0000) NPD Loss -1.2666 (-1.2646) lr 1.0000e-03 eta 0:01:57
+epoch [8/12] batch [45/50] time 0.465 (0.545) data 0.001 (0.043) loss 10.1312 (10.1077) loss_positive 4.8828 (4.7150) NIS Loss 10.2578 (10.2342) NND Loss 0.0000 (-0.0000) NPD Loss -1.2665 (-1.2648) lr 1.0000e-03 eta 0:01:51
+epoch [8/12] batch [50/50] time 0.396 (0.531) data 0.000 (0.038) loss 10.1311 (10.1041) loss_positive 4.8086 (4.7162) NIS Loss 10.2578 (10.2306) NND Loss 0.0000 (-0.0000) NPD Loss -1.2668 (-1.2650) lr 7.4118e-04 eta 0:01:46
+epoch [9/12] batch [5/50] time 0.636 (1.518) data 0.008 (0.334) loss 10.1311 (10.1452) loss_positive 4.6641 (4.6375) NIS Loss 10.2578 (10.2719) NND Loss -0.0001 (-0.0000) NPD Loss -1.2668 (-1.2667) lr 7.4118e-04 eta 0:04:55
+epoch [9/12] batch [10/50] time 0.450 (1.033) data 0.000 (0.170) loss 10.0608 (10.0936) loss_positive 4.6289 (4.6430) NIS Loss 10.1875 (10.2203) NND Loss -0.0000 (-0.0000) NPD Loss -1.2668 (-1.2668) lr 7.4118e-04 eta 0:03:16
+epoch [9/12] batch [15/50] time 0.444 (0.835) data 0.000 (0.114) loss 9.7014 (10.1014) loss_positive 5.0195 (4.6951) NIS Loss 9.8281 (10.2281) NND Loss -0.0001 (-0.0000) NPD Loss -1.2670 (-1.2668) lr 7.4118e-04 eta 0:02:34
+epoch [9/12] batch [20/50] time 0.436 (0.734) data 0.001 (0.085) loss 10.1389 (10.1233) loss_positive 4.4844 (4.6922) NIS Loss 10.2656 (10.2500) NND Loss 0.0000 (-0.0000) NPD Loss -1.2674 (-1.2669) lr 7.4118e-04 eta 0:02:12
+epoch [9/12] batch [25/50] time 0.444 (0.675) data 0.003 (0.068) loss 10.0842 (10.1308) loss_positive 4.7148 (4.6966) NIS Loss 10.2109 (10.2575) NND Loss 0.0000 (-0.0000) NPD Loss -1.2674 (-1.2670) lr 7.4118e-04 eta 0:01:58
+epoch [9/12] batch [30/50] time 0.449 (0.636) data 0.001 (0.057) loss 10.1154 (10.1199) loss_positive 4.9648 (4.7016) NIS Loss 10.2422 (10.2466) NND Loss -0.0000 (-0.0000) NPD Loss -1.2677 (-1.2671) lr 7.4118e-04 eta 0:01:48
+epoch [9/12] batch [35/50] time 0.466 (0.624) data 0.003 (0.050) loss 10.1388 (10.1253) loss_positive 4.6367 (4.7021) NIS Loss 10.2656 (10.2520) NND Loss -0.0000 (-0.0000) NPD Loss -1.2679 (-1.2672) lr 7.4118e-04 eta 0:01:43
+epoch [9/12] batch [40/50] time 0.462 (0.604) data 0.001 (0.044) loss 10.1544 (10.1211) loss_positive 4.9062 (4.7157) NIS Loss 10.2812 (10.2479) NND Loss 0.0001 (-0.0000) NPD Loss -1.2683 (-1.2673) lr 7.4118e-04 eta 0:01:36
+epoch [9/12] batch [45/50] time 0.481 (0.590) data 0.001 (0.039) loss 10.1700 (10.1198) loss_positive 4.6328 (4.7193) NIS Loss 10.2969 (10.2465) NND Loss 0.0001 (-0.0000) NPD Loss -1.2683 (-1.2674) lr 7.4118e-04 eta 0:01:31
+epoch [9/12] batch [50/50] time 0.392 (0.570) data 0.000 (0.035) loss 10.3106 (10.1145) loss_positive 4.6758 (4.7163) NIS Loss 10.4375 (10.2413) NND Loss 0.0001 (-0.0000) NPD Loss -1.2688 (-1.2676) lr 5.0000e-04 eta 0:01:25
+epoch [10/12] batch [5/50] time 0.429 (0.979) data 0.001 (0.392) loss 10.1465 (10.0747) loss_positive 4.6367 (4.6719) NIS Loss 10.2734 (10.2016) NND Loss -0.0001 (-0.0000) NPD Loss -1.2692 (-1.2690) lr 5.0000e-04 eta 0:02:21
+epoch [10/12] batch [10/50] time 0.428 (0.710) data 0.001 (0.196) loss 10.0840 (10.1457) loss_positive 4.7344 (4.6875) NIS Loss 10.2109 (10.2727) NND Loss -0.0001 (-0.0000) NPD Loss -1.2695 (-1.2691) lr 5.0000e-04 eta 0:01:39
+epoch [10/12] batch [15/50] time 0.623 (0.664) data 0.007 (0.133) loss 10.2480 (10.1559) loss_positive 4.7070 (4.7036) NIS Loss 10.3750 (10.2828) NND Loss -0.0000 (-0.0000) NPD Loss -1.2698 (-1.2693) lr 5.0000e-04 eta 0:01:29
+epoch [10/12] batch [20/50] time 0.693 (0.663) data 0.009 (0.101) loss 10.2792 (10.1262) loss_positive 4.8203 (4.7037) NIS Loss 10.4062 (10.2531) NND Loss -0.0000 (-0.0000) NPD Loss -1.2702 (-1.2695) lr 5.0000e-04 eta 0:01:26
+epoch [10/12] batch [25/50] time 0.589 (0.663) data 0.003 (0.082) loss 10.2011 (10.1427) loss_positive 4.6914 (4.7069) NIS Loss 10.3281 (10.2697) NND Loss 0.0000 (-0.0000) NPD Loss -1.2705 (-1.2697) lr 5.0000e-04 eta 0:01:22
+epoch [10/12] batch [30/50] time 0.438 (0.626) data 0.001 (0.068) loss 10.2479 (10.1290) loss_positive 4.7500 (4.7066) NIS Loss 10.3750 (10.2560) NND Loss 0.0000 (-0.0000) NPD Loss -1.2707 (-1.2698) lr 5.0000e-04 eta 0:01:15
+epoch [10/12] batch [35/50] time 0.389 (0.598) data 0.001 (0.059) loss 9.8104 (10.1183) loss_positive 4.8750 (4.7108) NIS Loss 9.9375 (10.2453) NND Loss 0.0000 (-0.0000) NPD Loss -1.2709 (-1.2700) lr 5.0000e-04 eta 0:01:08
+epoch [10/12] batch [40/50] time 0.382 (0.572) data 0.000 (0.051) loss 9.6932 (10.1124) loss_positive 4.7578 (4.7089) NIS Loss 9.8203 (10.2395) NND Loss 0.0000 (-0.0000) NPD Loss -1.2710 (-1.2701) lr 5.0000e-04 eta 0:01:02
+epoch [10/12] batch [45/50] time 0.387 (0.551) data 0.000 (0.046) loss 9.8338 (10.1133) loss_positive 4.8438 (4.7152) NIS Loss 9.9609 (10.2403) NND Loss 0.0000 (0.0000) NPD Loss -1.2711 (-1.2702) lr 5.0000e-04 eta 0:00:57
+epoch [10/12] batch [50/50] time 0.465 (0.536) data 0.000 (0.041) loss 10.2401 (10.1086) loss_positive 4.7695 (4.7179) NIS Loss 10.3672 (10.2356) NND Loss 0.0000 (0.0000) NPD Loss -1.2712 (-1.2703) lr 2.9289e-04 eta 0:00:53
+epoch [11/12] batch [5/50] time 0.596 (1.717) data 0.001 (0.536) loss 9.8807 (9.9916) loss_positive 4.8867 (4.7703) NIS Loss 10.0078 (10.1188) NND Loss 0.0000 (-0.0000) NPD Loss -1.2712 (-1.2713) lr 2.9289e-04 eta 0:02:43
+epoch [11/12] batch [10/50] time 0.448 (1.106) data 0.001 (0.270) loss 10.1776 (10.0494) loss_positive 4.7930 (4.7227) NIS Loss 10.3047 (10.1766) NND Loss -0.0000 (-0.0000) NPD Loss -1.2713 (-1.2713) lr 2.9289e-04 eta 0:01:39
+epoch [11/12] batch [15/50] time 0.438 (0.885) data 0.001 (0.180) loss 9.8260 (10.0390) loss_positive 4.6133 (4.7328) NIS Loss 9.9531 (10.1661) NND Loss 0.0000 (-0.0000) NPD Loss -1.2713 (-1.2713) lr 2.9289e-04 eta 0:01:15
+epoch [11/12] batch [20/50] time 0.437 (0.773) data 0.001 (0.135) loss 10.1150 (10.0682) loss_positive 4.9180 (4.7506) NIS Loss 10.2422 (10.1953) NND Loss -0.0000 (-0.0000) NPD Loss -1.2716 (-1.2713) lr 2.9289e-04 eta 0:01:01
+epoch [11/12] batch [25/50] time 0.439 (0.706) data 0.003 (0.109) loss 9.9979 (10.0769) loss_positive 4.7109 (4.7545) NIS Loss 10.1250 (10.2041) NND Loss -0.0000 (-0.0000) NPD Loss -1.2714 (-1.2714) lr 2.9289e-04 eta 0:00:52
+epoch [11/12] batch [30/50] time 0.488 (0.663) data 0.002 (0.091) loss 10.3025 (10.0945) loss_positive 4.7148 (4.7458) NIS Loss 10.4297 (10.2216) NND Loss -0.0001 (-0.0000) NPD Loss -1.2717 (-1.2714) lr 2.9289e-04 eta 0:00:46
+epoch [11/12] batch [35/50] time 0.466 (0.655) data 0.002 (0.078) loss 9.9900 (10.0764) loss_positive 4.6250 (4.7484) NIS Loss 10.1172 (10.2036) NND Loss -0.0001 (-0.0000) NPD Loss -1.2716 (-1.2714) lr 2.9289e-04 eta 0:00:42
+epoch [11/12] batch [40/50] time 0.452 (0.630) data 0.001 (0.069) loss 10.1228 (10.0787) loss_positive 4.7070 (4.7389) NIS Loss 10.2500 (10.2059) NND Loss -0.0000 (-0.0000) NPD Loss -1.2717 (-1.2715) lr 2.9289e-04 eta 0:00:37
+epoch [11/12] batch [45/50] time 0.474 (0.612) data 0.001 (0.061) loss 9.9822 (10.0876) loss_positive 4.5859 (4.7306) NIS Loss 10.1094 (10.2148) NND Loss -0.0000 (-0.0000) NPD Loss -1.2718 (-1.2715) lr 2.9289e-04 eta 0:00:33
+epoch [11/12] batch [50/50] time 0.407 (0.593) data 0.000 (0.055) loss 10.0213 (10.0928) loss_positive 4.8086 (4.7263) NIS Loss 10.1484 (10.2200) NND Loss 0.0000 (-0.0000) NPD Loss -1.2717 (-1.2715) lr 1.3397e-04 eta 0:00:29
+epoch [12/12] batch [5/50] time 0.425 (1.074) data 0.001 (0.478) loss 9.8337 (9.9916) loss_positive 4.8320 (4.8187) NIS Loss 9.9609 (10.1188) NND Loss -0.0000 (-0.0001) NPD Loss -1.2720 (-1.2718) lr 1.3397e-04 eta 0:00:48
+epoch [12/12] batch [10/50] time 0.626 (0.776) data 0.001 (0.239) loss 10.3650 (10.0713) loss_positive 4.6602 (4.7445) NIS Loss 10.4922 (10.1984) NND Loss -0.0000 (-0.0000) NPD Loss -1.2718 (-1.2718) lr 1.3397e-04 eta 0:00:31
+epoch [12/12] batch [15/50] time 0.630 (0.732) data 0.007 (0.162) loss 10.0525 (10.0645) loss_positive 4.6875 (4.7086) NIS Loss 10.1797 (10.1917) NND Loss -0.0000 (-0.0000) NPD Loss -1.2719 (-1.2718) lr 1.3397e-04 eta 0:00:25
+epoch [12/12] batch [20/50] time 0.679 (0.716) data 0.001 (0.122) loss 10.2166 (10.0834) loss_positive 4.6016 (4.7123) NIS Loss 10.3438 (10.2105) NND Loss -0.0000 (-0.0000) NPD Loss -1.2718 (-1.2718) lr 1.3397e-04 eta 0:00:21
+epoch [12/12] batch [25/50] time 0.642 (0.706) data 0.008 (0.099) loss 10.1228 (10.0884) loss_positive 4.6719 (4.7181) NIS Loss 10.2500 (10.2156) NND Loss -0.0000 (-0.0000) NPD Loss -1.2718 (-1.2718) lr 1.3397e-04 eta 0:00:17
+epoch [12/12] batch [30/50] time 0.458 (0.662) data 0.000 (0.083) loss 10.1228 (10.0957) loss_positive 4.6562 (4.7270) NIS Loss 10.2500 (10.2229) NND Loss 0.0000 (-0.0000) NPD Loss -1.2718 (-1.2718) lr 1.3397e-04 eta 0:00:13
+epoch [12/12] batch [35/50] time 0.385 (0.629) data 0.001 (0.071) loss 9.9119 (10.0925) loss_positive 4.6680 (4.7306) NIS Loss 10.0391 (10.2196) NND Loss -0.0000 (-0.0000) NPD Loss -1.2717 (-1.2718) lr 1.3397e-04 eta 0:00:09
+epoch [12/12] batch [40/50] time 0.385 (0.599) data 0.000 (0.062) loss 10.0994 (10.0855) loss_positive 4.7578 (4.7238) NIS Loss 10.2266 (10.2127) NND Loss -0.0000 (-0.0000) NPD Loss -1.2717 (-1.2718) lr 1.3397e-04 eta 0:00:05
+epoch [12/12] batch [45/50] time 0.396 (0.575) data 0.000 (0.055) loss 10.3884 (10.0952) loss_positive 4.8125 (4.7172) NIS Loss 10.5156 (10.2224) NND Loss -0.0000 (-0.0000) NPD Loss -1.2718 (-1.2718) lr 1.3397e-04 eta 0:00:02
+epoch [12/12] batch [50/50] time 0.471 (0.558) data 0.000 (0.050) loss 10.4509 (10.0981) loss_positive 4.8242 (4.7196) NIS Loss 10.5781 (10.2253) NND Loss -0.0000 (-0.0000) NPD Loss -1.2719 (-1.2718) lr 3.4074e-05 eta 0:00:00
+Checkpoint saved to output/imagenet_openood/NegPrompt/vit_b16_ep12_16shots/nctx16nega_ctx1/seed1/prompt_learner/model.pth.tar-12
+Finish training
+Deploy the last-epoch model
+Calling CoOp_works\CoOp\trainers\negprompt.NegPrompt.test
+Shape of _pred_k:  (5000, 100)
+Shape of _pred_u:  (10000, 100)
+AUROC: 0.69006, AUPR: 0.57241, FPR95: 0.94710
+Elapsed: 0:09:25
