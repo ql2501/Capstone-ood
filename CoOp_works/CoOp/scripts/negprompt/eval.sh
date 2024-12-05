@@ -8,15 +8,15 @@ DATASET=$1    # First argument
 CFG=$2        # Second argument (config file)
 
 # Specify the model directory and epoch
-MODEL_DIR="scripts/negprompt/main.sh1"
-LOAD_EPOCH=50
+MODEL_DIR=$3
+LOAD_EPOCH=$4
 
 
 # Iterate over seeds
 for SEED in 1
 do
     # DIR="output/$DATASET/$TRAINER/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}"
-    DIR="output/$DATASET/$TRAINER/try_config/seed${SEED}" # Dummy directory for config debugging
+    DIR="output/$DATASET/$TRAINER/eval/model_dir${MODEL_DIR}/load_epoch${LOAD_EPOCH}/seed${SEED}" # Dummy directory for config debugging
 
     # Execute the Python script
     python train.py \
