@@ -1,5 +1,5 @@
 classname_dic = {
-    "Texture" : {
+    "Imagenet_Openood" : {
         "classes":[
             'id',
             'ood',

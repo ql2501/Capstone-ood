@@ -10,6 +10,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
 import torch.distributions as dist
+from torch.utils.data import DataLoader, TensorDataset
 
 from dassl.engine import TRAINER_REGISTRY, TrainerX
 from dassl.metrics import compute_accuracy
@@ -25,13 +26,59 @@ from trainers.negprompt_utils import compute_oscr, compute_fpr, metric_ood
 from tqdm import tqdm
 import numpy as np
 from copy import deepcopy
+import matplotlib.pyplot as plt
+from matplotlib.collections import PatchCollection
+from sklearn.manifold import TSNE
+from sklearn.metrics import pairwise_distances
+import os
 
 _tokenizer = _Tokenizer()
 # ensure the device is set globally
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # for debugging purpose
-DEBUG = False    
+DEBUG = False  
 
+# define an object that will be used by the legend
+class MulticolorPatch(object):
+    def __init__(self, colors):
+        self.colors = colors
+class MulticolorCrossPatch(object):
+    def __init__(self, colors):
+        self.colors = colors
+        
+# define a handler for the MulticolorPatch object
+class MulticolorPatchHandler(object):
+    def legend_artist(self, legend, orig_handle, fontsize, handlebox):
+        width, height = handlebox.width, handlebox.height
+        patches = []
+        for i, c in enumerate(orig_handle.colors):
+            patches.append(plt.Circle([width/len(orig_handle.colors) * i - handlebox.xdescent + width/(2*len(orig_handle.colors)),
+                                     -handlebox.ydescent + height/2],
+                                    min(width/(2*len(orig_handle.colors)), height/2),
+                                    facecolor=c,
+                                    edgecolor='none'))
+
+        patch = PatchCollection(patches,match_original=True)
+
+        handlebox.add_artist(patch)
+        return patch
+class MulticolorPatchCrossHandler(object):
+    def legend_artist(self, legend, orig_handle, fontsize, handlebox):
+        width, height = handlebox.width, handlebox.height
+        patches = []
+        for i, c in enumerate(orig_handle.colors):
+            patch = plt.scatter([width/len(orig_handle.colors) * i - handlebox.xdescent + width/(2*len(orig_handle.colors))],
+                              [-handlebox.ydescent + height/2],
+                              marker='x',
+                              c=[c],
+                              s=100)
+            patches.append(patch)
+        
+        for patch in patches:
+            handlebox.add_artist(patch)
+        
+        return patches[0]
+    
 def load_clip_to_cpu(cfg):
     '''
     Migrating helper functions from CoOp/trainers/coop.py to here
@@ -690,6 +737,10 @@ class NegPrompt(TrainerX):
         # print('ACC: {:.5f}, OSCR: {:.5f}, FPR95: {:.5f}, AUPR: {:.5f}, TNR: {:.5f}, AUROC: {:.5f}, DTACC: {:.5f}, AUIN: {:.5f}, AUOUT: {:.5f}'.format(
         #     results['ACC'], results['OSCR'], results['FPR95'], results['AUPR'], results['TNR'], results['AUROC'], results['DTACC'], results['AUIN'], results['AUOUT']))
         print('AUROC: {:.5f}, AUPR: {:.5f}, FPR95: {:.5f}'.format(auroc, aupr, fpr95))
+
+        # draw tsne plot
+        self.draw_tsne_plot(class_num=10)
+
         return auroc  # TODO: check what should be returned    
 
     def get_NND_loss(self, negative_text_features):
@@ -713,7 +764,7 @@ class NegPrompt(TrainerX):
             dot_product = negative_features_norm @ negative_features_mean_norm.t()
             loss_nega_to_nega += -torch.mean(1-dot_product)
             loss_nega_to_nega /= negative_text_features.shape[0]
-            return loss_nega_to_nega
+        return loss_nega_to_nega
     
     def get_NIS_loss(self, output, n_nega_ctx, labels):
         '''
@@ -816,7 +867,7 @@ class NegPrompt(TrainerX):
                 # dot_product = negative_features_norm @ negative_features_norm.t()
                 # nega_mean
                 dot_product = negative_features_norm @ negative_features_mean_norm.t()
-                loss_nega_to_nega += -torch.mean(1-dot_product)
+                loss_nega_to_nega += -torch.mean(1-dot_product)  # maximize the distance 
             loss_nega_to_nega /= negative_text_features.shape[0]
 
             if DEBUG: print(f"Loss NND done")
@@ -877,19 +928,19 @@ class NegPrompt(TrainerX):
             if DEBUG: 
                 print(f"IF CTX_NEG CHANGED: {not torch.equal(prev, self.model.prompt_learner.ctx_negative.data)}")
                 
-            for name, param in self.model.named_parameters():
-                if param.requires_grad:  # 仅检查 requires_grad=True 的参数
-                    if param.grad is None:
-                        print(f"{name} has no gradient!")
-                    else:
-                        print(f"{name} gradient mean: {param.grad.mean()}")
+                for name, param in self.model.named_parameters():
+                    if param.requires_grad:  # 仅检查 requires_grad=True 的参数
+                        if param.grad is None:
+                            print(f"{name} has no gradient!")
+                        else:
+                            print(f"{name} gradient mean: {param.grad.mean()}")
 
 
-            # Check if ctx_negative has changed
-            if torch.equal(self.model.prompt_learner.ctx_negative, neg_prompt_before_update):
-                print("neg prompt has not changed.")
-            else:
-                print("neg prompt has changed!!")
+                # Check if ctx_negative has changed
+                if torch.equal(self.model.prompt_learner.ctx_negative, neg_prompt_before_update):
+                    print("neg prompt has not changed.")
+                else:
+                    print("neg prompt has changed!!")
 
         loss_summary = {
             "loss": loss.item(),
@@ -925,6 +976,161 @@ class NegPrompt(TrainerX):
         label = label.to(self.device)
         return input, label
     
+    def draw_tsne_plot(self, epoch=None, class_num=10, num_img_per_class=30, labels_to_draw=None):
+        '''
+        Draw tsne plot for pos and neg text features and image features
+        class_num: number of classes to draw, if not specify class_to_draw
+        num_img_per_class: number of images to draw for each class
+        labels_to_draw: list of int, specify the class index to draw, if not None, class_num will be ignored
+        '''
+        # think of using training data to draw tsne plot, draw OOD samples from test OOD data
+        prompts = self.model.prompt_learner()   # call forward_negative, return both positive and negative prompts, shape = [nclass, 1+n_nega, n_ctx, 512]
+        tokenized_prompts = self.model.tokenized_prompts # shape = [nclass* (1+n_nega), n_ctx]
+        text_features = self.model.text_encoder(prompts, tokenized_prompts)
+        text_features = text_features.reshape(prompts.shape[0], prompts.shape[1], text_features.shape[-1])  # shape = [nclass, 1+n_nega, 512]
+        pos_feature = text_features[:, 0:1, :].cpu()
+        pos_feature = pos_feature / pos_feature.norm(dim=-1, keepdim=True)
+        neg_feature = text_features[:, 1:, :].cpu()
+        neg_feature = neg_feature / neg_feature.norm(dim=-1, keepdim=True)
+        pos_label = torch.arange(pos_feature.shape[0])[..., None] # shape = [nclass, 1]
+        neg_label = torch.full((neg_feature.shape[0], neg_feature.shape[1]), pos_feature.shape[0]) #shape = [nclass, n_nega], value = nclass
+        print('get text features done')
+
+        # get labels to draw
+        n_class = pos_feature.shape[0]
+        if labels_to_draw is not None:
+            assert all([label < n_class for label in labels_to_draw]), "label_to_draw should be within n_class"
+            labels_to_draw = torch.Tensor(labels_to_draw).to(self.device)   # cuda
+            class_num = len(labels_to_draw)
+        else:
+            # sample class_num classes
+            class_num = min(class_num, n_class)
+            labels_to_draw = torch.randperm(n_class)[:class_num]
+            labels_to_draw = labels_to_draw.to(self.device)
+        print('numbers of classes to draw: ', class_num)
+        print(f'labels to draw: {labels_to_draw}')
+        print('number of images per class: ', num_img_per_class)
+        
+        # get all image features of ID samples
+        all_image_feature = torch.Tensor()
+        all_image_label = torch.Tensor()
+        print('getting ID image features...')
+        tqdm_object = tqdm(self.train_loader_x, total=len(self.train_loader_x))
+        
+        # dictionary to track count of samples per class
+        class_counts = {label.item(): 0 for label in labels_to_draw}
+        
+        for batch in tqdm_object:
+            data, labels = self.parse_batch_train(batch)
+            # filter labels to draw
+            mask = torch.isin(labels, labels_to_draw)
+            data = data[mask]
+            labels = labels[mask]
+            if data.shape[0] == 0:
+                continue
+            
+            # filter samples to not exceed num_img_per_class per class
+            valid_samples_mask = torch.zeros_like(labels, dtype=torch.bool)
+            for i, label in enumerate(labels):
+                if class_counts[label.item()] < num_img_per_class:
+                    valid_samples_mask[i] = True
+                    class_counts[label.item()] += 1
+                
+            data = data[valid_samples_mask]
+            labels = labels[valid_samples_mask]
+            
+            if data.shape[0] == 0:
+                continue
+            
+            with torch.set_grad_enabled(False):
+                image_features = self.model.image_encoder(data.type(self.model.dtype)).cpu()
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                all_image_feature = torch.cat([all_image_feature, image_features], dim=0)
+                all_image_label = torch.cat([all_image_label, labels.cpu()], dim=0)
+            
+            # check if we have enough samples for all classes
+            if all(count >= num_img_per_class for count in class_counts.values()):
+                break
+
+        # get number of ID samples to draw: only plot OOD samples no more than ID samples
+        n_id_samples = all_image_feature.shape[0]
+
+        # get all image features of OOD samples
+        print('getting OOD image features...')
+        tqdm_object = tqdm(self.test_loader, total=len(self.test_loader))
+        n_ood_samples = 0
+        for batch in tqdm_object:
+            data, labels = self.parse_batch_train(batch)
+            # keep only label == 1
+            data = data[labels == 1]
+            # make all labels nclass
+            labels = torch.full((data.shape[0],), n_class)
+            n_ood_samples += data.shape[0]
+            if data.shape[0] == 0:
+                continue
+            with torch.set_grad_enabled(False):
+                image_features = self.model.image_encoder(data.type(self.model.dtype)).cpu()
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                all_image_feature = torch.cat([all_image_feature, image_features], dim=0)
+                all_image_label = torch.cat([all_image_label, labels.cpu()], dim=0)
+            if n_ood_samples > n_id_samples:
+                break
+        
+        # get filtered text features and filtered labels
+        labels_to_draw = labels_to_draw.cpu()
+        pos_feature = pos_feature[labels_to_draw]
+        neg_feature = neg_feature[labels_to_draw]
+        pos_label = pos_label[labels_to_draw]
+        neg_label = neg_label[labels_to_draw]
+
+        all_text_feature = torch.Tensor()               
+        all_text_feature = torch.cat([all_text_feature, pos_feature, neg_feature], dim=1)
+        all_text_feature = all_text_feature.view(-1, all_text_feature.shape[-1])
+        
+        all_text_label = torch.Tensor()
+        all_text_label = torch.cat([all_text_label, pos_label, neg_label], dim=1)
+        all_text_label = all_text_label.view(-1)
+        
+        total_feature = torch.cat([all_text_feature, all_image_feature], dim=0)
+        total_label = torch.cat([all_text_label, -1 * (all_image_label+1)], dim=0)
+
+        print('getting tsne features...')
+        X = total_feature.detach().numpy()
+        tsne_model = TSNE(metric="precomputed", n_components=2, init="random", perplexity=30)
+        distance_matrix = pairwise_distances(X, X, metric='cosine', n_jobs=-1)
+        
+        data = torch.Tensor(tsne_model.fit_transform(distance_matrix))
+        target = total_label
+        dataset = TensorDataset(data, target)
+        loader = DataLoader(dataset, batch_size=256)
+        plt.figure()
+        print('drawing tsne plot...')
+        for x, y in loader:
+            # 样本点显示
+            idx_pos_text = (y < n_class) & (y >= 0)  # 正向样本 
+            idx_nega_text = (y >= n_class)  # 负向样本
+            idx_pos_image = (y < 0) & (y >= -n_class)
+            idx_nega_image = (y < -n_class)
+
+            plt.axis('off')  # Remove axes
+            plt.scatter(x[idx_pos_text, 0], x[idx_pos_text, 1], marker = 'o', c=y[idx_pos_text], alpha=0.7,
+                        cmap=plt.cm.get_cmap("plasma", n_class + 1), label='Positive Text')
+            plt.scatter(x[idx_nega_text, 0], x[idx_nega_text, 1], marker = 'o', c=y[idx_nega_text], alpha=0.7,
+                        cmap=plt.cm.get_cmap("summer", n_class + 1), label='Negative Text')
+            plt.scatter(x[idx_pos_image, 0], x[idx_pos_image, 1], marker = 'x',c =-1 * y[idx_pos_image] - 1, alpha=0.5,
+                        cmap=plt.cm.get_cmap("plasma", n_class + 1), label='ID Images')
+            plt.scatter(x[idx_nega_image, 0], x[idx_nega_image, 1], marker = 'x',c=-1 * y[idx_nega_image] - 1, alpha=0.7,
+                        cmap=plt.cm.get_cmap("summer", n_class + 1), label='OOD Images')
+        
+        # Add legend outside the plot
+        plt.legend()
+        
+        plt.tight_layout()  # Adjust layout to prevent legend cutoff
+        plt.savefig(os.path.join(self.output_dir, 'tsne_plot.png'), bbox_inches='tight')
+        plt.close()
+        print(f'tsne plot saved to {os.path.join(self.output_dir, "tsne_plot.pdf")}')
+
+
     # Qi: 
     # TODO: need to check if we really need to override this method
     # NOTE: this is from trainerX template
@@ -1021,20 +1227,3 @@ class NegPrompt(TrainerX):
         # # Close writer
         # self.close_writer()
 
-    # Qi: dummy train for debugging (我不觉得需要override这个)
-    # Yilan: example train from dassl's training base class
-    # Yilan: don't need to override this method!
-    # def train(self):
-    #     """dummy train for debugging, don't need to override this method!"""
-    #     print("Calling train")
-    #     self.before_train()
-    #     print("Before train done")
-    #     for self.epoch in range(2):
-    #         self.before_epoch()
-    #         print("Before epoch done")
-    #         self.run_epoch()
-    #         print("Run epoch done")
-    #         self.after_epoch()
-    #         print("After epoch done")
-    #     self.after_train()
-    #     print("Train done")
