@@ -10,7 +10,7 @@ NCTX=$2
 SHOTS=$3  # number of shots (1, 2, 4, 8, 16)
 NEGA_CTX=$4
 
-for SEED in 1
+for SEED in 1 2 3
 do
     # bash script for negprompt
     DIR=output/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}nega_ctx${NEGA_CTX}/seed${SEED}
